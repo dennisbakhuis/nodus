@@ -15,14 +15,30 @@ const ORG_ADDRESS_KEY = "org.address";
 
 const DEMO_ENABLED_KEY = "demo.enabled";
 const DEMO_SECONDS_PER_STEP_KEY = "demo.seconds_per_step";
-const DEMO_SECONDS_DEFAULT = 10;
+const DEMO_SCROLL_PROBABILITY_KEY = "demo.scroll_probability";
+const DEMO_MODAL_PROBABILITY_KEY = "demo.modal_probability";
+const DEMO_SECONDS_DEFAULT = 6;
 const DEMO_SECONDS_MIN = 1;
 const DEMO_SECONDS_MAX = 60;
+const DEMO_SCROLL_PCT_DEFAULT = 40;
+const DEMO_MODAL_PCT_DEFAULT = 40;
 
 function parseDemoSeconds(raw: string): number {
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n)) return DEMO_SECONDS_DEFAULT;
   return Math.min(DEMO_SECONDS_MAX, Math.max(DEMO_SECONDS_MIN, n));
+}
+
+/** Stored value is a 0–1 fraction; UI presents 0–100 percent. */
+function probabilityToPercent(raw: string, fallback: number): number {
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.round(Math.min(1, Math.max(0, n)) * 100);
+}
+
+function clampPercent(pct: number, fallback: number): number {
+  if (!Number.isFinite(pct)) return fallback;
+  return Math.min(100, Math.max(0, Math.round(pct)));
 }
 
 const NODUS_LOGO_SENTINEL = "nodus";
@@ -71,6 +87,18 @@ export function SettingsPage() {
   const [demoSeconds, setDemoSeconds] = useState<number>(DEMO_SECONDS_DEFAULT);
   const [savedDemoSeconds, setSavedDemoSeconds] =
     useState<number>(DEMO_SECONDS_DEFAULT);
+  const [demoScrollPct, setDemoScrollPct] = useState<number>(
+    DEMO_SCROLL_PCT_DEFAULT,
+  );
+  const [savedDemoScrollPct, setSavedDemoScrollPct] = useState<number>(
+    DEMO_SCROLL_PCT_DEFAULT,
+  );
+  const [demoModalPct, setDemoModalPct] = useState<number>(
+    DEMO_MODAL_PCT_DEFAULT,
+  );
+  const [savedDemoModalPct, setSavedDemoModalPct] = useState<number>(
+    DEMO_MODAL_PCT_DEFAULT,
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingOrg, setSavingOrg] = useState(false);
@@ -114,8 +142,28 @@ export function SettingsPage() {
         key: DEMO_SECONDS_PER_STEP_KEY,
         value: String(DEMO_SECONDS_DEFAULT),
       })),
+      getSetting(DEMO_SCROLL_PROBABILITY_KEY).catch(() => ({
+        key: DEMO_SCROLL_PROBABILITY_KEY,
+        value: String(DEMO_SCROLL_PCT_DEFAULT / 100),
+      })),
+      getSetting(DEMO_MODAL_PROBABILITY_KEY).catch(() => ({
+        key: DEMO_MODAL_PROBABILITY_KEY,
+        value: String(DEMO_MODAL_PCT_DEFAULT / 100),
+      })),
     ])
-      .then(([logo, name, slug, url, email, address, demoOn, demoSec]) => {
+      .then(
+        ([
+          logo,
+          name,
+          slug,
+          url,
+          email,
+          address,
+          demoOn,
+          demoSec,
+          demoScroll,
+          demoModal,
+        ]) => {
         if (cancelled) return;
         if (logo.value === NODUS_LOGO_SENTINEL) {
           setLogoMode("nodus");
@@ -143,6 +191,18 @@ export function SettingsPage() {
         const sec = parseDemoSeconds(demoSec.value);
         setDemoSeconds(sec);
         setSavedDemoSeconds(sec);
+        const scrollPct = probabilityToPercent(
+          demoScroll.value,
+          DEMO_SCROLL_PCT_DEFAULT,
+        );
+        setDemoScrollPct(scrollPct);
+        setSavedDemoScrollPct(scrollPct);
+        const modalPct = probabilityToPercent(
+          demoModal.value,
+          DEMO_MODAL_PCT_DEFAULT,
+        );
+        setDemoModalPct(modalPct);
+        setSavedDemoModalPct(modalPct);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -251,16 +311,35 @@ export function SettingsPage() {
   }
 
   const demoDirty =
-    demoEnabled !== savedDemoEnabled || demoSeconds !== savedDemoSeconds;
+    demoEnabled !== savedDemoEnabled ||
+    demoSeconds !== savedDemoSeconds ||
+    demoScrollPct !== savedDemoScrollPct ||
+    demoModalPct !== savedDemoModalPct;
 
   async function handleSaveDemo() {
     setSavingDemo(true);
     setDemoStatus(null);
     try {
       const clamped = parseDemoSeconds(String(demoSeconds));
-      const [enabledRow, secRow] = await Promise.all([
+      const scrollPctClamped = clampPercent(
+        demoScrollPct,
+        DEMO_SCROLL_PCT_DEFAULT,
+      );
+      const modalPctClamped = clampPercent(
+        demoModalPct,
+        DEMO_MODAL_PCT_DEFAULT,
+      );
+      const [enabledRow, secRow, scrollRow, modalRow] = await Promise.all([
         upsertSetting(DEMO_ENABLED_KEY, demoEnabled ? "true" : "false"),
         upsertSetting(DEMO_SECONDS_PER_STEP_KEY, String(clamped)),
+        upsertSetting(
+          DEMO_SCROLL_PROBABILITY_KEY,
+          String(scrollPctClamped / 100),
+        ),
+        upsertSetting(
+          DEMO_MODAL_PROBABILITY_KEY,
+          String(modalPctClamped / 100),
+        ),
       ]);
       const enabled = enabledRow.value === "true";
       setDemoEnabled(enabled);
@@ -268,6 +347,18 @@ export function SettingsPage() {
       const sec = parseDemoSeconds(secRow.value);
       setDemoSeconds(sec);
       setSavedDemoSeconds(sec);
+      const savedScrollPct = probabilityToPercent(
+        scrollRow.value,
+        DEMO_SCROLL_PCT_DEFAULT,
+      );
+      setDemoScrollPct(savedScrollPct);
+      setSavedDemoScrollPct(savedScrollPct);
+      const savedModalPct = probabilityToPercent(
+        modalRow.value,
+        DEMO_MODAL_PCT_DEFAULT,
+      );
+      setDemoModalPct(savedModalPct);
+      setSavedDemoModalPct(savedModalPct);
       setDemoStatus({ kind: "ok", msg: "Saved." });
     } catch (e) {
       setDemoStatus({
@@ -554,10 +645,11 @@ export function SettingsPage() {
         <h2 className={styles.sectionTitle}>Presentation mode</h2>
         <p className={styles.sectionDesc}>
           Self-running tour of the radar — a simulated cursor visits dots and
-          labels at random, opens their detail panels, and occasionally expands
-          the full detail view. Useful for demos and unattended displays. When
-          enabled, a ▶ button appears in the top-right of the radar. Any real
-          mouse or keyboard activity stops the tour.
+          labels at random, opens their detail panels, and may also scroll
+          through the panel or expand the full detail modal. Useful for demos
+          and unattended displays. When enabled, a ▶ button appears in the
+          top-right of the radar. Any real mouse or keyboard activity stops
+          the tour.
         </p>
 
         <div className={styles.field}>
@@ -601,6 +693,72 @@ export function SettingsPage() {
                 }}
                 onBlur={() =>
                   setDemoSeconds((s) => parseDemoSeconds(String(s)))
+                }
+              />
+            )}
+          </Field>
+        </div>
+
+        <div className={styles.field}>
+          <Field
+            label="Scroll the side panel (% of visits)"
+            helper="Chance, per dot, that the simulated user scrolls through the side-panel content within the step time. When scrolling fires, the modal is skipped for that dot. 0 disables scrolling."
+          >
+            {({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                className={styles.input}
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={demoScrollPct}
+                onChange={(e) => {
+                  const parsed = Number.parseInt(e.target.value, 10);
+                  setDemoScrollPct(
+                    Number.isFinite(parsed)
+                      ? parsed
+                      : DEMO_SCROLL_PCT_DEFAULT,
+                  );
+                }}
+                onBlur={() =>
+                  setDemoScrollPct((p) =>
+                    clampPercent(p, DEMO_SCROLL_PCT_DEFAULT),
+                  )
+                }
+              />
+            )}
+          </Field>
+        </div>
+
+        <div className={styles.field}>
+          <Field
+            label="Open full detail modal (% of visits)"
+            helper="Chance, per dot, that the simulated user expands the side panel into the full detail modal within the step time. Only evaluated when scrolling did not fire. 0 disables the modal sub-flow."
+          >
+            {({ id, describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                className={styles.input}
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={demoModalPct}
+                onChange={(e) => {
+                  const parsed = Number.parseInt(e.target.value, 10);
+                  setDemoModalPct(
+                    Number.isFinite(parsed)
+                      ? parsed
+                      : DEMO_MODAL_PCT_DEFAULT,
+                  );
+                }}
+                onBlur={() =>
+                  setDemoModalPct((p) =>
+                    clampPercent(p, DEMO_MODAL_PCT_DEFAULT),
+                  )
                 }
               />
             )}

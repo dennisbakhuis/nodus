@@ -404,6 +404,7 @@ export function DetailPanel({
         </div>
 
         <div
+          data-demo-scroll="detail-panel"
           style={{
             flex: 1,
             overflowY: "auto",

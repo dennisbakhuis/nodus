@@ -14,8 +14,12 @@ Commands
     Create all SQLModel tables if missing. Idempotent. Safe to run on a live
     database.
 ``db reset --confirm``
-    Delete the SQLite database file and recreate empty tables. Refuses to run
-    without ``--confirm``. Use only on local development databases.
+    Drop every table and recreate empty schema in place. The DB file (or
+    backing Postgres database) is kept; only its contents are destroyed.
+    Refuses to run without ``--confirm``. Use only on local development
+    databases. The in-place truncate is deliberate: any backend process
+    still running against the same SQLite file picks up the rebuilt
+    schema immediately, which would not happen if the file were unlinked.
 ``seed [--settings] [--users] [--movements] [--all]``
     Run one or more seed steps. ``--users`` is refused outside ``NODUS_ENV in
     {dev, test}`` to keep the demo-password accounts out of production.
@@ -76,14 +80,16 @@ def _cmd_db_reset(args: argparse.Namespace) -> int:
         return 2
     from sqlmodel import SQLModel
 
-    from app.db import DB_FILE, create_db_and_tables, engine
+    from app.db import DB_FILE, IS_SQLITE, _apply_post_create_migrations, engine
+
+    import app.models  # noqa: F401 — register every SQLModel table on metadata
 
     SQLModel.metadata.drop_all(engine)
-    engine.dispose()
-    if DB_FILE and os.path.exists(DB_FILE):
-        os.remove(DB_FILE)
-        logger.warning("Deleted database file: %s", DB_FILE)
-    create_db_and_tables()
+    SQLModel.metadata.create_all(engine)
+    if IS_SQLITE:
+        _apply_post_create_migrations(engine)
+        if DB_FILE and os.path.exists(DB_FILE):
+            logger.warning("Truncated database at: %s", DB_FILE)
     logger.info("Recreated empty schema.")
     return 0
 
