@@ -1,8 +1,15 @@
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+
 type Props = {
   x: number;
   y: number;
   visible: boolean;
   pulsing: boolean;
+  /** When true, the cursor is portaled into the currently open `<dialog>` so
+   * it renders inside the browser's top layer and stays visible above modal
+   * content. */
+  modalOpen?: boolean;
 };
 
 const CURSOR_SIZE = 24;
@@ -17,8 +24,28 @@ const TRANSITION =
  * `pointer-events: none` keeps the real mouse uninterrupted — the overlay is
  * purely visual.
  */
-export function DemoCursor({ x, y, visible, pulsing }: Props) {
-  return (
+export function DemoCursor({ x, y, visible, pulsing, modalOpen }: Props) {
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!modalOpen) {
+      setPortalTarget(null);
+      return;
+    }
+    let raf = 0;
+    const tick = () => {
+      const dialog = document.querySelector<HTMLElement>("dialog[open]");
+      if (dialog) {
+        setPortalTarget(dialog);
+        return;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => cancelAnimationFrame(raf);
+  }, [modalOpen]);
+
+  const node = (
     <div
       aria-hidden="true"
       style={{
@@ -74,4 +101,9 @@ export function DemoCursor({ x, y, visible, pulsing }: Props) {
       </svg>
     </div>
   );
+
+  if (modalOpen && portalTarget) {
+    return createPortal(node, portalTarget);
+  }
+  return node;
 }

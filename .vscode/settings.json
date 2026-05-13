@@ -1,0 +1,26 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/src/backend/.venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/src/backend"
+  ],
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticMode": "workspace",
+  "python.analysis.autoSearchPaths": true,
+  "python.analysis.useLibraryCodeForTypes": true,
+  "python.terminal.activateEnvironment": true,
+  "ruff.interpreter": [
+    "${workspaceFolder}/src/backend/.venv/bin/python"
+  ],
+  "ruff.path": [
+    "${workspaceFolder}/src/backend/.venv/bin/ruff"
+  ],
+  "evenBetterToml.schema.enabled": false,
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  }
+}

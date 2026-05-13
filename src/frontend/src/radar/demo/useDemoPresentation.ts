@@ -5,6 +5,13 @@ import type { FilterState, RadarData, RadarEntry } from "../types";
 type Params = {
   enabled: boolean;
   secondsPerStep: number;
+  /** Probability (0–1) that, after opening a side panel, the simulated user
+   * also scrolls through the panel content. Set to 0 to disable scrolling. */
+  scrollProbability: number;
+  /** Probability (0–1) that, after opening (and optionally scrolling) the
+   * side panel, the simulated user also opens the full detail modal. Set to
+   * 0 to disable modal openings. */
+  modalProbability: number;
   data: RadarData | null;
   filters: FilterState;
   focusedSegmentIdx: number | null;
@@ -37,11 +44,14 @@ type Result = {
   dwell: DemoDwell | null;
 };
 
-const MODAL_PROBABILITY = 0.2;
 const CURSOR_MOVE_MS = 800;
 const HOVER_REGISTER_MS = 250;
 const PULSE_MS = 350;
 const RECENT_LIMIT = 5;
+/** Fraction of the visible viewport advanced per scroll stop. */
+const SCROLL_STEP_RATIO = 0.6;
+/** Minimum per-phase wait when the scroll sub-flow splits the dwell budget. */
+const SCROLL_PHASE_MIN_MS = 400;
 
 function pickWeighted<T>(items: T[]): T | null {
   if (items.length === 0) return null;
@@ -97,6 +107,12 @@ function queryEntryEl(entryId: string): SVGGElement | null {
 function queryByAriaLabel(label: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(
     `[aria-label="${CSS.escape(label)}"]`,
+  );
+}
+
+function queryDemoScroll(name: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    `[data-demo-scroll="${CSS.escape(name)}"]`,
   );
 }
 
@@ -247,16 +263,6 @@ export function useDemoPresentation(params: Params): Result {
       }
     };
 
-    const waitWithTimer = async (ms: number) => {
-      dwellKeyRef.current += 1;
-      setDwell({ duration: ms, key: dwellKeyRef.current });
-      try {
-        await wait(ms);
-      } finally {
-        setDwell(null);
-      }
-    };
-
     const recent: string[] = [];
     let prevEl: Element | null = null;
     let lastEntry: RadarEntry | null = null;
@@ -324,24 +330,107 @@ export function useDemoPresentation(params: Params): Result {
         await wait(PULSE_MS);
         setCursor((c) => ({ ...c, pulsing: false }));
 
-        await waitWithTimer(p.secondsPerStep * 1000);
+        // Decide the side-panel sub-flow up front. Scroll and modal are
+        // mutually exclusive — if we scroll, we skip the modal entirely so
+        // the dwell budget stays predictable.
+        // Decide the side-panel sub-flow up front. Scroll and modal are
+        // mutually exclusive, and each fits entirely inside the N-second
+        // dwell budget so the overall step duration stays predictable.
+        const totalMs = p.secondsPerStep * 1000;
+        const wantScroll =
+          Math.random() < paramsRef.current.scrollProbability;
+        const scroller = wantScroll ? queryDemoScroll("detail-panel") : null;
+        const overflow = scroller
+          ? scroller.scrollHeight - scroller.clientHeight
+          : 0;
+        const willScroll = scroller != null && overflow > 40;
+        const wantModal =
+          !willScroll &&
+          Math.random() < paramsRef.current.modalProbability;
+        const openBtn = wantModal
+          ? queryByAriaLabel("Open full detail view")
+          : null;
+        const willOpenModal = openBtn != null;
 
-        // Optional modal sub-flow.
-        if (Math.random() < MODAL_PROBABILITY) {
-          const openBtn = queryByAriaLabel("Open full detail view");
-          if (openBtn) {
-            const obr = openBtn.getBoundingClientRect();
-            const { x: ox, y: oy } = centerOf(obr);
-            await moveTo(ox, oy, true);
-            paramsRef.current.setModalOpen(true);
-            await waitWithTimer(paramsRef.current.secondsPerStep * 1000);
-            // Close modal — call setter directly (modal close button location
-            // varies by content; the direct call is reliable).
-            setCursor((c) => ({ ...c, pulsing: true }));
+        dwellKeyRef.current += 1;
+        setDwell({ duration: totalMs, key: dwellKeyRef.current });
+        let modalWasOpened = false;
+        try {
+          if (willScroll && scroller) {
+            const step = Math.max(
+              80,
+              Math.floor(scroller.clientHeight * SCROLL_STEP_RATIO),
+            );
+            const phase = Math.max(
+              SCROLL_PHASE_MIN_MS,
+              Math.floor(totalMs / 4),
+            );
+            await wait(phase);
+            if (!isCancelled()) {
+              scroller.scrollTo({
+                top: Math.min(overflow, step),
+                behavior: "smooth",
+              });
+              await wait(phase);
+            }
+            if (!isCancelled()) {
+              scroller.scrollTo({
+                top: Math.min(overflow, step * 2),
+                behavior: "smooth",
+              });
+              await wait(phase);
+            }
+            if (!isCancelled()) {
+              scroller.scrollTo({ top: 0, behavior: "smooth" });
+              await wait(Math.max(200, totalMs - phase * 3));
+            }
+          } else if (willOpenModal && openBtn) {
+            // Modal sub-flow fits inside the N-second budget:
+            //   peek panel → move + click open → mount → view → move + close.
+            // The viewing portion absorbs whatever time the transitions
+            // (cursor moves, mount, pulse) do not consume.
+            const peekMs = Math.min(
+              1000,
+              Math.max(300, Math.floor(totalMs * 0.15)),
+            );
+            const mountMs = 400;
+            const overheadMs =
+              peekMs +
+              CURSOR_MOVE_MS +
+              PULSE_MS +
+              mountMs +
+              CURSOR_MOVE_MS +
+              PULSE_MS;
+            const viewMs = Math.max(400, totalMs - overheadMs);
+            await wait(peekMs);
+            if (!isCancelled()) {
+              const obr = openBtn.getBoundingClientRect();
+              const { x: ox, y: oy } = centerOf(obr);
+              await moveTo(ox, oy, true);
+              paramsRef.current.setModalOpen(true);
+              modalWasOpened = true;
+              await wait(mountMs);
+              await wait(viewMs);
+            }
+            if (!isCancelled() && modalWasOpened) {
+              // Cursor portals into the open dialog (see DemoCursor) so the
+              // close action renders above the modal's top layer.
+              const closeModalBtn = queryByAriaLabel("Close modal");
+              if (closeModalBtn) {
+                const mbr = closeModalBtn.getBoundingClientRect();
+                const { x: mx, y: my } = centerOf(mbr);
+                await moveTo(mx, my, true);
+              }
+              paramsRef.current.setModalOpen(false);
+              modalWasOpened = false;
+            }
+          } else {
+            await wait(totalMs);
+          }
+        } finally {
+          setDwell(null);
+          if (modalWasOpened) {
             paramsRef.current.setModalOpen(false);
-            await wait(PULSE_MS);
-            setCursor((c) => ({ ...c, pulsing: false }));
-            await wait(600);
           }
         }
 

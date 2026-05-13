@@ -95,7 +95,10 @@ export function RadarPage() {
   const [shapeMode, setShapeMode] = useState<ShapeMode>("dot");
   const [centerLogoUrl, setCenterLogoUrl] = useState<string>("nodus");
   const [demoEnabled, setDemoEnabled] = useState<boolean>(false);
-  const [demoSecondsPerStep, setDemoSecondsPerStep] = useState<number>(10);
+  const [demoSecondsPerStep, setDemoSecondsPerStep] = useState<number>(6);
+  const [demoScrollProbability, setDemoScrollProbability] =
+    useState<number>(0.4);
+  const [demoModalProbability, setDemoModalProbability] = useState<number>(0.4);
   const svgRef = useRef<SVGSVGElement>(null);
   const { setTarget: setExportTarget } = useExportTarget();
   const { setTarget: setDemoTarget } = useDemoMode();
@@ -147,16 +150,31 @@ export function RadarPage() {
       })),
       getSetting("demo.seconds_per_step").catch(() => ({
         key: "demo.seconds_per_step",
-        value: "10",
+        value: "6",
       })),
-    ]).then(([on, sec]) => {
+      getSetting("demo.scroll_probability").catch(() => ({
+        key: "demo.scroll_probability",
+        value: "0.4",
+      })),
+      getSetting("demo.modal_probability").catch(() => ({
+        key: "demo.modal_probability",
+        value: "0.4",
+      })),
+    ]).then(([on, sec, scrollProb, modalProb]) => {
       if (cancelled) return;
       setDemoEnabled(on.value === "true");
       const parsed = Number.parseInt(sec.value, 10);
       const clamped = Number.isFinite(parsed)
         ? Math.min(60, Math.max(1, parsed))
-        : 10;
+        : 6;
       setDemoSecondsPerStep(clamped);
+      const parseProb = (raw: string, fallback: number) => {
+        const n = Number.parseFloat(raw);
+        if (!Number.isFinite(n)) return fallback;
+        return Math.min(1, Math.max(0, n));
+      };
+      setDemoScrollProbability(parseProb(scrollProb.value, 0.4));
+      setDemoModalProbability(parseProb(modalProb.value, 0.4));
     });
     return () => {
       cancelled = true;
@@ -242,6 +260,8 @@ export function RadarPage() {
   const demo = useDemoPresentation({
     enabled: demoEnabled,
     secondsPerStep: demoSecondsPerStep,
+    scrollProbability: demoScrollProbability,
+    modalProbability: demoModalProbability,
     data,
     filters,
     focusedSegmentIdx,
@@ -398,6 +418,7 @@ export function RadarPage() {
           y={demo.cursor.y}
           visible={demo.cursor.visible}
           pulsing={demo.cursor.pulsing}
+          modalOpen={modalOpen}
         />
       </div>
     </ReadOnlyRadarProvider>
