@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 -46 1715 511"
+     font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <!-- ============ GRADIENTS ============ -->
+    <!-- Main teal->green diagonal for radar strokes -->
+    <linearGradient id="tealGreen" x1="10%" y1="90%" x2="90%" y2="10%">
+      <stop offset="0%"   stop-color="#1E7A8C"/>
+      <stop offset="35%"  stop-color="#2BB3B9"/>
+      <stop offset="70%"  stop-color="#5FD37A"/>
+      <stop offset="100%" stop-color="#8EE89A"/>
+    </linearGradient>
+
+    <linearGradient id="tealGreenSoft" x1="10%" y1="90%" x2="90%" y2="10%">
+      <stop offset="0%"   stop-color="#1E7A8C" stop-opacity="0.55"/>
+      <stop offset="50%"  stop-color="#3DD3B5" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#8EE89A" stop-opacity="0.55"/>
+    </linearGradient>
+
+    <!-- Blue -> green gradient for the O ring & diagonal
+         (bottom-right blue, top-left green) -->
+    <linearGradient id="oBlueGreen" x1="100%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%"   stop-color="#0F4E73"/>
+      <stop offset="35%"  stop-color="#1F7FA8"/>
+      <stop offset="65%"  stop-color="#2FBFA0"/>
+      <stop offset="100%" stop-color="#7FE89A"/>
+    </linearGradient>
+
+    <linearGradient id="oBlueGreenSoft" x1="100%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%"   stop-color="#0F4E73" stop-opacity="0.55"/>
+      <stop offset="50%"  stop-color="#2FBFA0" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#7FE89A" stop-opacity="0.55"/>
+    </linearGradient>
+
+    <!-- Green-grey for the center node of the O -->
+    <radialGradient id="centerNode" cx="40%" cy="35%" r="70%">
+      <stop offset="0%"   stop-color="#D6E5D0"/>
+      <stop offset="55%"  stop-color="#8FA89A"/>
+      <stop offset="100%" stop-color="#4A5E55"/>
+    </radialGradient>
+
+    <!-- Soft cyan halo -->
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#9FF5E8" stop-opacity="0.75"/>
+      <stop offset="40%"  stop-color="#7FE9E0" stop-opacity="0.35"/>
+      <stop offset="75%"  stop-color="#7FE9E0" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#7FE9E0" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- ============ FILTERS ============ -->
+    <filter id="glowSoft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+
+    <!-- ============ RADAR NODE ============ -->
+    <symbol id="node" overflow="visible">
+      <circle r="14" fill="#7FE9E0" opacity="0.35" filter="url(#glowSoft)"/>
+      <circle r="9"  fill="#F5F7FA" stroke="url(#tealGreen)" stroke-width="3.5"/>
+    </symbol>
+  </defs>
+
+  <!-- ===================== RADAR (left) ===================== -->
+  <g transform="translate(260,210)">
+    <circle r="280" fill="url(#halo)"/>
+    <circle r="220" fill="url(#halo)" opacity="0.85"/>
+
+    <g fill="none" stroke-linecap="round">
+      <!-- Ring 1 FULL -->
+      <circle r="190" stroke="url(#tealGreenSoft)" stroke-width="14" filter="url(#glowSoft)"/>
+      <circle r="190" stroke="url(#tealGreen)"     stroke-width="5"/>
+
+      <!-- Ring 2 SEGMENTED -->
+      <circle r="150" stroke="url(#tealGreenSoft)" stroke-width="13" stroke-dasharray="230 80"
+              filter="url(#glowSoft)" transform="rotate(15)"/>
+      <circle r="150" stroke="url(#tealGreen)"     stroke-width="4.5" stroke-dasharray="230 80"
+              transform="rotate(15)"/>
+
+      <!-- Ring 3 SEGMENTED -->
+      <circle r="110" stroke="url(#tealGreenSoft)" stroke-width="12" stroke-dasharray="250 95"
+              filter="url(#glowSoft)" transform="rotate(-30)"/>
+      <circle r="110" stroke="url(#tealGreen)"     stroke-width="4.5" stroke-dasharray="250 95"
+              transform="rotate(-30)"/>
+
+      <!-- Ring 4 SEGMENTED -->
+      <circle r="70"  stroke="url(#tealGreenSoft)" stroke-width="10" stroke-dasharray="160 60"
+              filter="url(#glowSoft)" transform="rotate(45)"/>
+      <circle r="70"  stroke="url(#tealGreen)"     stroke-width="4" stroke-dasharray="160 60"
+              transform="rotate(45)"/>
+
+      <!-- Innermost thin -->
+      <circle r="32"  stroke="url(#tealGreen)"     stroke-width="3.5"/>
+    </g>
+
+    <!-- Diagonal with depth -->
+    <line x1="-205" y1="170" x2="215" y2="-185"
+          stroke="url(#tealGreenSoft)" stroke-width="12" stroke-linecap="round"
+          filter="url(#glowSoft)"/>
+    <line x1="-205" y1="170" x2="215" y2="-185"
+          stroke="url(#tealGreen)" stroke-width="5" stroke-linecap="round"/>
+
+    <!-- Center luminous core -->
+    <circle r="22" fill="#9FF5E8" opacity="0.55" filter="url(#glowSoft)"/>
+    <circle r="13" fill="#F5F7FA" stroke="url(#tealGreen)" stroke-width="3.5"/>
+
+    <!-- Nodes -->
+    <use href="#node" x="215"  y="-185"/>
+    <use href="#node" x="-205" y="170"/>
+    <use href="#node" x="0"    y="-190"/>
+    <use href="#node" x="134"  y="-134"/>
+    <use href="#node" x="190"  y="0"/>
+    <use href="#node" x="134"  y="134"/>
+    <use href="#node" x="0"    y="190"/>
+    <use href="#node" x="-134" y="134"/>
+    <use href="#node" x="-190" y="0"/>
+    <use href="#node" x="-134" y="-134"/>
+    <use href="#node" x="106"  y="-106"/>
+    <use href="#node" x="150"  y="0"/>
+    <use href="#node" x="0"    y="150"/>
+    <use href="#node" x="-150" y="0"/>
+    <use href="#node" x="62"   y="62"/>
+    <use href="#node" x="-62"  y="-62"/>
+    <use href="#node" x="0"    y="-70"/>
+  </g>
+
+  <!-- ===================== WORDMARK (right) ===================== -->
+  <g transform="translate(560,25)">
+    <!-- N -->
+    <text x="0" y="290" font-size="300" font-weight="900" fill="#F5F7FA"
+          letter-spacing="-2">N</text>
+
+    <!-- ============ THE O: forbidden-sign / mini radar ============ -->
+    <g transform="translate(345,190)">
+      <!-- Halo glow behind -->
+      <circle r="160" fill="url(#halo)"/>
+      <circle r="125" fill="url(#halo)"/>
+
+      <!-- The ring of the letter O: double-stroke for depth -->
+      <circle r="95" fill="none"
+              stroke="url(#oBlueGreenSoft)" stroke-width="38"
+              filter="url(#glowSoft)"/>
+      <circle r="95" fill="none"
+              stroke="url(#oBlueGreen)" stroke-width="26"/>
+
+      <!-- The "forbidden" diagonal stroke through the O. -->
+      <line x1="-58" y1="58" x2="58" y2="-58"
+            stroke="url(#oBlueGreenSoft)" stroke-width="22" stroke-linecap="round"
+            filter="url(#glowSoft)"/>
+      <line x1="-58" y1="58" x2="58" y2="-58"
+            stroke="url(#oBlueGreen)" stroke-width="13" stroke-linecap="round"/>
+
+      <!-- Center node: green-grey, with soft halo behind -->
+      <circle r="22" fill="#9FF5E8" opacity="0.35" filter="url(#glowSoft)"/>
+      <circle r="16" fill="url(#centerNode)"
+              stroke="#4A5E55" stroke-width="1.5"/>
+      <!-- tiny inner highlight to give the node form -->
+      <circle cx="-4" cy="-5" r="4" fill="#F2F8EE" opacity="0.7"/>
+    </g>
+
+    <!-- DUS -->
+    <text x="475" y="290" font-size="300" font-weight="900" fill="#F5F7FA"
+          letter-spacing="-2">DUS</text>
+  </g>
+</svg>

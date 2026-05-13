@@ -1,0 +1,117 @@
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: var(--font-size-body);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-body);
+  color: var(--color-dark-text);
+  background-color: var(--color-page-background);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  color: var(--color-brand-dark-blue);
+}
+
+h1 {
+  font-size: var(--font-size-3xl);
+}
+
+h2 {
+  font-size: var(--font-size-2xl);
+}
+
+h3 {
+  font-size: var(--font-size-xl);
+}
+
+a {
+  color: var(--color-brand-bright-blue);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: var(--font-family);
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+::selection {
+  background-color: var(--color-brand-bright-blue);
+  color: var(--color-white);
+}
+
+dialog::backdrop {
+  background-color: rgba(15, 26, 51, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/*
+ * Respect the user's motion preference.
+ *
+ * The radar focus zoom is ~700 ms and the topic-detail panel slide is
+ * ~300 ms; both can trigger vestibular discomfort for users who set
+ * "reduce motion" in their OS. Flatten transitions and animations to
+ * effectively-instant values so nothing animates, while keeping the
+ * transition declarations themselves intact (some components rely on
+ * transitionend events firing to know layout has settled).
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

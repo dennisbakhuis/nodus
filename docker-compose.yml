@@ -1,0 +1,57 @@
+# Compose file for local development.
+# `version:` is deliberately omitted — the Compose Spec deprecated it.
+#
+# Usage:
+#   cp .env.example .env       # then edit
+#   docker compose up --build
+#
+# Backend on http://localhost:8000, frontend on http://localhost:3000.
+
+services:
+  backend:
+    build:
+      context: ./src/backend
+      args:
+        # NODUS_VERSION is sourced from .env (or defaults to "dev"). Set
+        # explicitly: `NODUS_VERSION=$(cat VERSION) docker compose up --build`.
+        APP_VERSION: ${NODUS_VERSION:-dev}
+    image: nodus-backend:dev
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      # Hot-reload source from the host; keep the venv inside the image so
+      # the container's Linux wheels don't get clobbered by a host venv.
+      - ./src/backend/app:/app/app
+      - backend-db:/app/data
+    # SQLite ends up at /app/data/radar.db so the named volume persists it
+    # across container rebuilds. Set NODUS_DATABASE_URL to use Postgres.
+    command: >
+      sh -c "NODUS_DATABASE_URL=$${NODUS_DATABASE_URL:-sqlite:////app/data/radar.db}
+             uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./src/frontend
+      args:
+        APP_VERSION: ${NODUS_VERSION:-dev}
+    image: nodus-frontend:dev
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  backend-db:

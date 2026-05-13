@@ -1,0 +1,163 @@
+/* Nodus brand tokens.
+ * Canonical brand assets live in public/brand/.
+ */
+
+:root {
+  /* === Nodus Core Brand === */
+  --color-brand-dark-blue: #003584;
+  --color-brand-bright-blue: #3c8cfa;
+  --color-brand-orange: #ff6428;
+  --color-brand-green: #33a92f;
+  --color-brand-light-blue: #a0c4e8;
+  --color-brand-near-white: #f5f7fa;
+  --color-brand-dark-overlay: #001e50;
+
+  /* Accent — used for internal app accents */
+  --color-brand-purple: #2d1a4a;
+
+  /* === Semantic Aliases === */
+  --color-white: #ffffff;
+  --color-light-background: #f5f3f7;
+
+  /* Page & radar backgrounds */
+  --color-page-background: var(--color-brand-near-white);
+  --color-radar-background: #ffffff;
+
+  /* Text colors */
+  --color-dark-text: #1a2b4a;
+  --color-muted-text: #3c465a;
+  --color-dark-blue: var(--color-brand-dark-blue);
+
+  /* Ring boundary and segment boundary lines */
+  --color-ring-boundary: #a0c4e8;
+  --color-segment-boundary: #a0c4e8;
+
+  /* === Ring Colors ===
+   * Methodology rings: Invest / Pilot / Explore / Monitor. Legacy aliases
+   * (Adopt/Trial/Assess/Watch) point at the same hex values. Prefer the
+   * methodology names in new ring-specific code; use the semantic tokens
+   * below for generic UI roles (badges, errors, etc.).
+   */
+  --color-ring-adopt: #1b7b34;
+  --color-ring-trial: #2d8bc9;
+  --color-ring-assess: #e8a317;
+  --color-ring-watch: #c23b22;
+
+  --color-ring-invest: var(--color-ring-adopt);
+  --color-ring-pilot: var(--color-ring-trial);
+  --color-ring-explore: var(--color-ring-assess);
+  --color-ring-monitor: var(--color-ring-watch);
+
+  /* === Semantic UI colors ===
+   * Use these — not the ring-specific tokens — for any generic UI role:
+   * success badges, info banners, validation errors, etc. The hex values
+   * currently alias the ring tokens; future redesigns can shift either side
+   * independently without breaking the other.
+   */
+  --color-success: var(--color-ring-adopt);
+  --color-info: var(--color-ring-trial);
+  --color-warning: var(--color-ring-assess);
+  --color-danger: var(--color-ring-watch);
+
+  /* Dot movement colors */
+  --color-dot-no-change: var(--color-brand-dark-blue);
+  --color-dot-new: var(--color-brand-green);
+  --color-dot-promoted: var(--color-brand-green);
+  --color-dot-demoted: var(--color-brand-orange);
+
+  /* Movement indicator colors */
+  --color-movement-up: #1b7b34;
+  --color-movement-down: #c23b22;
+  --color-movement-new: #2d8bc9;
+  --color-movement-unchanged: #6b7280;
+
+  /* === Segment Colors (5 distinct hues) ===
+   * Segment-2/3/5 are deliberately off the ring palette so colorMode="segment"
+   * and colorMode="ring" produce visibly different encodings.
+   */
+  --color-segment-1: #003584;
+  --color-segment-2: #0d9488;
+  --color-segment-3: #be185d;
+  --color-segment-4: #7c3aed;
+  --color-segment-5: #b45309;
+
+  /* UI accents */
+  --color-active-filter: var(--color-brand-bright-blue);
+  --color-detail-panel-header: var(--color-brand-dark-blue);
+  --color-leader-line: #a0c4e8;
+  --color-ring-label: var(--color-brand-dark-blue);
+  --color-segment-label: #3c465a;
+
+  /* Status colors */
+  --color-status-on-radar: var(--color-brand-dark-blue);
+  --color-status-backlog: #6b7280;
+  --color-status-archive: #9ca3af;
+
+  /* Interactive states */
+  --color-focus-ring: var(--color-brand-bright-blue);
+  --color-hover-bg: rgba(0, 53, 132, 0.06);
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+
+  /* === Typography === */
+  --font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-body: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 22px;
+  --font-size-2xl: 28px;
+  --font-size-3xl: 36px;
+
+  /* Named aliases matching usage context */
+  --font-size-segment-label: var(--font-size-xs);
+  --font-size-ring-label: var(--font-size-sm);
+  --font-size-dot-label: var(--font-size-sm);
+  --font-size-detail-h2: 24px;
+
+  --font-weight-light: 300;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+
+  --line-height-tight: 1.2;
+  --line-height-body: 1.5;
+
+  /* === Spacing Scale (4px base) === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* === Border Radius === */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* === Shadow Tokens === */
+  --shadow-sm: 0 1px 2px rgba(0, 53, 132, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 53, 132, 0.12);
+  --shadow-lg: 0 8px 24px rgba(0, 53, 132, 0.16);
+  --shadow-panel: 0 16px 40px rgba(0, 53, 132, 0.18);
+
+  /* === Z-index Scale === */
+  --z-base: 0;
+  --z-above: 10;
+  --z-dropdown: 100;
+  --z-modal: 200;
+  --z-tooltip: 300;
+
+  /* === Transitions === */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+}

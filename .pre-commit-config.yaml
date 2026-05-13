@@ -1,0 +1,72 @@
+default_install_hook_types: [pre-commit]
+fail_fast: false
+
+repos:
+  # ---------- Generic hygiene ----------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^src/frontend/tsconfig.*\.json$
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: detect-private-key
+
+  # ---------- Secret scanning ----------
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # ---------- Backend: Ruff (lint + format) ----------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff
+        name: ruff (backend)
+        files: ^src/backend/.*\.py$
+        args: ["--fix"]
+      - id: ruff-format
+        name: ruff-format (backend)
+        files: ^src/backend/.*\.py$
+
+  # ---------- Backend: mypy ----------
+  - repo: local
+    hooks:
+      - id: mypy-backend
+        name: mypy (backend)
+        language: system
+        files: ^src/backend/.*\.py$
+        pass_filenames: false
+        entry: bash -c 'cd src/backend && uv run mypy app'
+
+  # ---------- Frontend: ESLint + Prettier + tsc ----------
+  - repo: local
+    hooks:
+      - id: eslint-frontend
+        name: eslint (frontend)
+        language: system
+        files: ^src/frontend/src/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+        entry: bash -c 'cd src/frontend && npm run lint'
+
+      - id: prettier-frontend
+        name: prettier (frontend)
+        language: system
+        files: ^src/frontend/src/.*\.(ts|tsx|js|jsx|css|json|md)$
+        pass_filenames: false
+        entry: bash -c 'cd src/frontend && npx prettier --check src'
+
+      - id: tsc-frontend
+        name: tsc --noEmit (frontend)
+        language: system
+        files: ^src/frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+        entry: bash -c 'cd src/frontend && npx tsc -b --noEmit'

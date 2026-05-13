@@ -1,0 +1,30 @@
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage*
+htmlcov
+
+# Local databases (SQLite is dev-only; prod uses NODUS_DATABASE_URL)
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Env files — never bake secrets into images
+.env
+.env.*
+!.env.example
+
+# Docs & docker meta
+*.md
+Dockerfile
+.dockerignore
+
+# Editor / OS noise
+.vscode
+.idea
+.DS_Store

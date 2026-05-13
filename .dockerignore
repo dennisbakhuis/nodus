@@ -1,0 +1,65 @@
+# Version control
+.git
+.gitignore
+
+# Build artifacts
+**/node_modules
+**/dist
+**/build
+**/.vite
+**/.cache
+**/*.tsbuildinfo
+
+# Python caches & venvs
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/venv
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.tox
+**/.coverage*
+**/htmlcov
+
+# Local databases (SQLite is dev-only; prod uses NODUS_DATABASE_URL)
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.db-journal
+
+# Env files (never bake secrets into images)
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Docs & markdown (rebuilt outside the image)
+docs
+**/*.md
+# …but keep markdown that the frontend bundles via import.meta.glob,
+# otherwise the in-app Help panel falls back to
+# "No help content available for this page yet."
+!src/frontend/src/help/content/*.md
+
+# Editor / OS noise
+.vscode
+.idea
+.DS_Store
+
+# Test artifacts
+playwright-report
+test-results
+blob-report
+**/playwright/.cache
+
+# Docker meta — don't copy into the build context
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Claude / AI tooling
+.claude
+CLAUDE.local.md
