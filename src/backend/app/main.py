@@ -1,4 +1,5 @@
 import logging
+import os
 import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -169,13 +170,49 @@ def seed_demo_users(session: Session) -> None:
     session.commit()
 
 
+BOOTSTRAP_ADMIN_USERNAME_VAR = "NODUS_BOOTSTRAP_ADMIN_USERNAME"
+BOOTSTRAP_ADMIN_PASSWORD_VAR = "NODUS_BOOTSTRAP_ADMIN_PASSWORD"
+
+
+def seed_bootstrap_admin(session: Session) -> None:
+    """Create a local admin from env vars on startup, if missing.
+
+    Reads ``NODUS_BOOTSTRAP_ADMIN_USERNAME`` and
+    ``NODUS_BOOTSTRAP_ADMIN_PASSWORD``. No-op if either is unset/empty or
+    if a user with the given username already exists. Idempotent — safe
+    to run on every startup. Intended for environments where the
+    interactive ``python -m app.cli create-admin`` bootstrap is not
+    reachable (e.g. Azure Container Apps without local exec access).
+    """
+    username = os.environ.get(BOOTSTRAP_ADMIN_USERNAME_VAR, "").strip()
+    password = os.environ.get(BOOTSTRAP_ADMIN_PASSWORD_VAR, "")
+    if not username or not password:
+        return
+    existing = session.exec(select(User).where(User.username == username)).first()
+    if existing is not None:
+        _log.info("Bootstrap admin %r already exists; skipping.", username)
+        return
+    session.add(
+        User(
+            username=username,
+            first_name="Admin",
+            last_name="User",
+            role=UserRole.Admin.value,
+            password_hash=hash_password(password),
+        )
+    )
+    session.commit()
+    _log.info("Created bootstrap admin %r.", username)
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI) -> AsyncGenerator[None]:
     """Bootstrap on startup.
 
-    Creates tables, writes default settings rows, and seeds demo users in dev.
-    Segments are intentionally left empty — operators add them via the
-    management UI or by running ``make seed-dummy``.
+    Creates tables, writes default settings rows, seeds demo users in dev,
+    and creates a local admin from env vars if configured. Segments are
+    intentionally left empty — operators add them via the management UI
+    or by running ``make seed-dummy``.
     """
     import app.models as _models  # noqa: F401 — ensure all SQLModel tables are registered
 
@@ -184,6 +221,7 @@ async def lifespan(fastapi_app: FastAPI) -> AsyncGenerator[None]:
     with Session(engine) as session:
         seed_settings(session)
         seed_demo_users(session)
+        seed_bootstrap_admin(session)
     yield
 
 
