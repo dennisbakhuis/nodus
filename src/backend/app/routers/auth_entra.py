@@ -27,7 +27,7 @@ from fastapi.responses import RedirectResponse
 from sqlmodel import select
 
 from app import auth_entra, config
-from app.auth import SESSION_TTL, generate_token, hash_token
+from app.auth import SESSION_TTL, AdminDep, generate_token, hash_token
 from app.auth_entra import (
     EntraConfigError,
     EntraValidationError,
@@ -54,6 +54,27 @@ def _entra_enabled_or_404() -> None:
     """404 when Entra is disabled. Prevents probing internal config errors."""
     if not config.auth_entra_enabled():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+
+_ROLE_ORDER = ("admin", "writer", "reader", "public_reader")
+
+
+@router.get("/admin/config")
+def entra_admin_config(_admin: AdminDep) -> dict[str, object]:
+    """Admin view of the Entra integration: whether it's enabled and the
+    configured group-object-id → application-role mapping.
+
+    Backs the read-only Entra panel on the Users management page. Only roles
+    with a configured group id are returned.
+    """
+    return {
+        "enabled": config.auth_entra_enabled(),
+        "groups": [
+            {"role": role, "group_id": group_id}
+            for role in _ROLE_ORDER
+            if (group_id := config.entra_group_for_role(role))
+        ],
+    }
 
 
 def _frontend_origin_from_redirect(redirect_uri: str) -> str:

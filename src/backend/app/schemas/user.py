@@ -29,6 +29,7 @@ class UserAdminRead(BaseModel):
     is_active: bool
     mfa_enabled: bool
     must_change_password: bool
+    entra_oid: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -49,6 +50,7 @@ class UserAdminCreate(BaseModel):
 class UserAdminUpdate(BaseModel):
     """PATCH body for admin user update; only included fields are changed."""
 
+    username: str | None = None
     first_name: str | None = None
     last_name: str | None = None
     role: str | None = None
