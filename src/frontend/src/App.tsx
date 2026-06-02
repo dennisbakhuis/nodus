@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./shared/Layout";
 import { AuthCallbackPage } from "./shared/AuthCallbackPage";
 import { AuthProvider } from "./shared/AuthContext";
+import { ProtectedRoute } from "./shared/ProtectedRoute";
 import { ConfirmProvider } from "./shared/ConfirmDialog";
 import { ErrorBoundary } from "./shared/ErrorBoundary";
 import { ExportProvider } from "./shared/ExportContext";
@@ -44,15 +45,50 @@ function RoutedContent() {
           path="/manage/technologies"
           element={<Navigate to="/list" replace />}
         />
-        <Route path="/manage" element={<ManagePage />}>
+        <Route
+          path="/manage"
+          element={
+            <ProtectedRoute requireRole="writer">
+              <ManagePage />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Navigate to="cycles" replace />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="cycles" element={<CyclesPage />} />
-          <Route path="segments" element={<SegmentsPage />} />
+          <Route
+            path="segments"
+            element={
+              <ProtectedRoute requireRole="admin" redirectTo="/manage/cycles">
+                <SegmentsPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="persons" element={<PersonsPage />} />
-          <Route path="users" element={<UsersPage />} />
-          <Route path="visibility" element={<VisibilityPage />} />
-          <Route path="backup" element={<BackupPage />} />
+          <Route
+            path="users"
+            element={
+              <ProtectedRoute requireRole="admin" redirectTo="/manage/cycles">
+                <UsersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="visibility"
+            element={
+              <ProtectedRoute requireRole="admin" redirectTo="/manage/cycles">
+                <VisibilityPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="backup"
+            element={
+              <ProtectedRoute requireRole="admin" redirectTo="/manage/cycles">
+                <BackupPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="import" element={<ImportPage />} />
           <Route path="api" element={<ApiPage />} />
         </Route>

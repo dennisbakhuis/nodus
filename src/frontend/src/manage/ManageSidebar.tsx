@@ -2,24 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../shared/AuthContext";
 import { NodusFooterLink } from "../shared/NodusFooterLink";
-
-type Item = {
-  to: string;
-  label: string;
-  adminOnly?: boolean;
-};
-
-const ITEMS: Item[] = [
-  { to: "/manage/cycles", label: "Cycles" },
-  { to: "/manage/segments", label: "Segments", adminOnly: true },
-  { to: "/manage/persons", label: "People" },
-  { to: "/manage/users", label: "Users", adminOnly: true },
-  { to: "/manage/visibility", label: "Data Visibility", adminOnly: true },
-  { to: "/manage/backup", label: "Backup & Restore", adminOnly: true },
-  { to: "/manage/import", label: "Import References" },
-  { to: "/manage/settings", label: "Settings" },
-  { to: "/manage/api", label: "API", adminOnly: true },
-];
+import { MANAGE_NAV } from "./manageNav";
 
 const WIDTH_KEY = "manage.sidebar.width";
 const MIN_WIDTH = 200;
@@ -39,7 +22,7 @@ function readSavedWidth(): number {
 
 export function ManageSidebar() {
   const { isAdmin } = useAuth();
-  const visible = ITEMS.filter((i) => !i.adminOnly || isAdmin);
+  const visible = MANAGE_NAV.filter((i) => i.role !== "admin" || isAdmin);
   const [width, setWidth] = useState<number>(readSavedWidth);
   const [dragging, setDragging] = useState(false);
 

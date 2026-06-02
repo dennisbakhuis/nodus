@@ -32,12 +32,12 @@ type Props = {
 export function Layout({ children }: Props) {
   const [navOpen, setNavOpen] = useState(false);
   const { fullBleed } = useRadarCycle();
-  const { isWriter } = useAuth();
+  const { isWriter, isAuthenticated } = useAuth();
   const { target: exportTarget } = useExportTarget();
   const { target: addTarget } = useAddAction();
   const { target: demoTarget } = useDemoMode();
   const reducedMotion = usePrefersReducedMotion();
-  const showDemoBtn = !!demoTarget && !reducedMotion;
+  const showDemoBtn = !!demoTarget && !reducedMotion && isAuthenticated;
   const navItems = isWriter
     ? (["Radar", "List", "Manage"] as const)
     : (["Radar", "List"] as const);
@@ -220,14 +220,14 @@ export function Layout({ children }: Props) {
                 + Add
               </Button>
             )}
-            {exportTarget?.mode === "radar" && (
+            {isAuthenticated && exportTarget?.mode === "radar" && (
               <ExportMenu
                 svgRef={exportTarget.svgRef}
                 data={exportTarget.data}
                 variant="header"
               />
             )}
-            {exportTarget?.mode === "data" && (
+            {isAuthenticated && exportTarget?.mode === "data" && (
               <DataExportMenu
                 data={exportTarget.data}
                 filteredEntries={exportTarget.filteredEntries}
