@@ -32,6 +32,8 @@ type AuthContextValue = {
   isLoading: boolean;
   isWriter: boolean;
   isAdmin: boolean;
+  /** True for any signed-in role (reader/writer/admin); false for public/anonymous. */
+  isAuthenticated: boolean;
   // Capability flags — prefer these over user !== null in render-time gates.
   // Anonymous visitors map to PublicReader server-side, so anything a
   // PublicReader can do, an anonymous visitor can do too.
@@ -55,6 +57,7 @@ const Ctx = createContext<AuthContextValue>({
   isLoading: false,
   isWriter: false,
   isAdmin: false,
+  isAuthenticated: false,
   effectiveRole: "public_reader",
   canBrowseCycles: true,
   canOpenTopicDetail: true,
@@ -241,6 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       isWriter,
       isAdmin,
+      isAuthenticated: effectiveRole !== "public_reader",
       effectiveRole,
       // Cycles list, topic-detail slide-in, and movement history all use
       // OptionalUserDep server-side and filter via is_public_only(). Anonymous

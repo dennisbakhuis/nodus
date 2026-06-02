@@ -277,3 +277,148 @@ def test_mfa_disable_requires_password(
     refreshed = session.exec(select(User).where(User.username == "mfauser2")).first()
     assert refreshed is not None
     assert refreshed.totp_secret is None
+
+
+def test_anonymous_cannot_list_api_keys(anon_client: TestClient) -> None:
+    """API-key management is gated; anonymous callers get 401."""
+    response = anon_client.get("/api/manage/api-keys")
+    assert response.status_code == 401
+
+
+def test_reader_cannot_list_api_keys(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+) -> None:
+    """Readers are below the writer floor for API-key management."""
+    _, token = make_user(role=UserRole.Reader)
+    response = anon_client.get("/api/manage/api-keys", headers=auth_header(token))
+    assert response.status_code == 403
+
+
+def test_writer_can_mint_and_list_own_api_key(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+) -> None:
+    """Writers may self-service their own API keys."""
+    writer, token = make_user(role=UserRole.Writer)
+    created = anon_client.post(
+        "/api/manage/api-keys",
+        json={"name": "ci-token"},
+        headers=auth_header(token),
+    )
+    assert created.status_code == 201
+    assert created.json()["api_key"]["user_id"] == str(writer.id)
+
+    listed = anon_client.get("/api/manage/api-keys", headers=auth_header(token))
+    assert listed.status_code == 200
+    body = listed.json()
+    assert len(body) == 1
+    assert body[0]["user_id"] == str(writer.id)
+
+
+def test_writer_cannot_mint_api_key_for_another_user(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+) -> None:
+    """A key inherits its owner's role; minting for others stays admin-only."""
+    _, token = make_user(role=UserRole.Writer)
+    admin, _ = make_user(role=UserRole.Admin)
+    response = anon_client.post(
+        "/api/manage/api-keys",
+        json={"name": "escalation", "user_id": str(admin.id)},
+        headers=auth_header(token),
+    )
+    assert response.status_code == 403
+
+
+def test_writer_sees_only_own_keys_not_others(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+) -> None:
+    """Listing is scoped to the caller for non-admins."""
+    writer, writer_token = make_user(role=UserRole.Writer)
+    other_writer, _ = make_user(role=UserRole.Writer)
+    admin, admin_token = make_user(role=UserRole.Admin)
+
+    anon_client.post(
+        "/api/manage/api-keys",
+        json={"name": "mine"},
+        headers=auth_header(writer_token),
+    )
+    anon_client.post(
+        "/api/manage/api-keys",
+        json={"name": "theirs", "user_id": str(other_writer.id)},
+        headers=auth_header(admin_token),
+    )
+
+    writer_view = anon_client.get("/api/manage/api-keys", headers=auth_header(writer_token))
+    assert writer_view.status_code == 200
+    assert {k["user_id"] for k in writer_view.json()} == {str(writer.id)}
+
+    admin_view = anon_client.get("/api/manage/api-keys", headers=auth_header(admin_token))
+    assert admin_view.status_code == 200
+    assert len(admin_view.json()) == 2
+
+
+def test_writer_cannot_revoke_anothers_api_key(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+) -> None:
+    """Writers cannot revoke keys they do not own (hidden as 404)."""
+    other_writer, _ = make_user(role=UserRole.Writer)
+    _, writer_token = make_user(role=UserRole.Writer)
+    admin, admin_token = make_user(role=UserRole.Admin)
+    created = anon_client.post(
+        "/api/manage/api-keys",
+        json={"name": "theirs", "user_id": str(other_writer.id)},
+        headers=auth_header(admin_token),
+    )
+    key_id = created.json()["api_key"]["id"]
+
+    response = anon_client.delete(
+        f"/api/manage/api-keys/{key_id}", headers=auth_header(writer_token)
+    )
+    assert response.status_code == 404
+
+
+def test_admin_can_mint_api_key_for_another_user(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+) -> None:
+    """Admins retain cross-user minting."""
+    writer, _ = make_user(role=UserRole.Writer)
+    _, admin_token = make_user(role=UserRole.Admin)
+    response = anon_client.post(
+        "/api/manage/api-keys",
+        json={"name": "for-writer", "user_id": str(writer.id)},
+        headers=auth_header(admin_token),
+    )
+    assert response.status_code == 201
+    assert response.json()["api_key"]["user_id"] == str(writer.id)
+
+
+def test_writer_cannot_create_user(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+) -> None:
+    """Critical operations like user creation remain admin-only."""
+    _, token = make_user(role=UserRole.Writer)
+    response = anon_client.post(
+        "/api/admin/users",
+        json={
+            "username": "newbie",
+            "first_name": "New",
+            "last_name": "Bie",
+            "password": "secret123",
+            "role": "reader",
+        },
+        headers=auth_header(token),
+    )
+    assert response.status_code == 403

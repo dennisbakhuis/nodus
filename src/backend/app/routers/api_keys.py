@@ -1,10 +1,14 @@
-"""Admin-only management of long-lived API keys.
+"""Self-service management of long-lived API keys.
 
 API keys are bearer credentials with the ``ntr_`` prefix that act as the user
 identified by ``user_id`` (typically a regular User row) and inherit that
 user's role at request time. The plaintext token is returned exactly once,
 in the POST response; afterwards only the SHA-256 ``token_hash`` and a short
 ``token_prefix`` are persisted. Revocation is a soft delete.
+
+Writers may manage their own keys. Minting a key for another user is an
+admin-only operation, since a key inherits its owner's role and would otherwise
+let a writer escalate by anchoring a key to an admin.
 """
 
 import uuid
@@ -13,18 +17,23 @@ from fastapi import APIRouter, HTTPException, status
 from sqlmodel import select
 
 from app.auth import (
-    AdminDep,
+    WriterDep,
     auth_disabled,
     generate_api_key,
     hash_token,
 )
 from app.db import SessionDep
 from app.models.api_key import ApiKey
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.api_key import ApiKeyCreate, ApiKeyCreateResponse, ApiKeyRead
 from app.time_utils import now_utc
 
 router = APIRouter(prefix="/manage/api-keys", tags=["api-keys"])
+
+
+def _is_admin(user: User) -> bool:
+    """Whether the caller holds the Admin role."""
+    return user.role == UserRole.Admin.value
 
 
 def _to_read(api_key: ApiKey, owner_username: str) -> ApiKeyRead:
@@ -44,11 +53,15 @@ def _to_read(api_key: ApiKey, owner_username: str) -> ApiKeyRead:
 
 
 @router.get("", response_model=list[ApiKeyRead])
-def list_api_keys(session: SessionDep, _admin: AdminDep) -> list[ApiKeyRead]:
-    """List all API keys (active and revoked) ordered by creation time desc."""
-    keys = session.exec(
-        select(ApiKey).order_by(ApiKey.created_at.desc())  # type: ignore[attr-defined]
-    ).all()
+def list_api_keys(session: SessionDep, caller: WriterDep) -> list[ApiKeyRead]:
+    """List API keys ordered by creation time desc.
+
+    Admins see every key; writers see only the keys they own.
+    """
+    statement = select(ApiKey).order_by(ApiKey.created_at.desc())  # type: ignore[attr-defined]
+    if not _is_admin(caller):
+        statement = statement.where(ApiKey.user_id == caller.id)
+    keys = session.exec(statement).all()
     if not keys:
         return []
     user_ids = {k.user_id for k in keys}
@@ -63,9 +76,13 @@ def list_api_keys(session: SessionDep, _admin: AdminDep) -> list[ApiKeyRead]:
     status_code=status.HTTP_201_CREATED,
 )
 def create_api_key(
-    payload: ApiKeyCreate, session: SessionDep, admin: AdminDep
+    payload: ApiKeyCreate, session: SessionDep, caller: WriterDep
 ) -> ApiKeyCreateResponse:
-    """Mint a new API key. Returns the plaintext token exactly once."""
+    """Mint a new API key. Returns the plaintext token exactly once.
+
+    Writers may only mint keys for themselves; targeting another user is
+    admin-only, since a key inherits its owner's role at request time.
+    """
     if auth_disabled():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -77,7 +94,12 @@ def create_api_key(
     if not payload.name.strip():
         raise HTTPException(status_code=400, detail="Name cannot be empty")
 
-    target_user_id = payload.user_id or admin.id
+    target_user_id = payload.user_id or caller.id
+    if target_user_id != caller.id and not _is_admin(caller):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins may mint API keys for another user",
+        )
     target_user = session.get(User, target_user_id)
     if target_user is None or not target_user.is_active:
         raise HTTPException(
@@ -98,7 +120,7 @@ def create_api_key(
         name=payload.name.strip(),
         description=payload.description,
         expires_at=payload.expires_at,
-        created_by_user_id=admin.id,
+        created_by_user_id=caller.id,
     )
     session.add(api_key)
     session.commit()
@@ -110,10 +132,15 @@ def create_api_key(
 
 
 @router.delete("/{key_id}", response_model=ApiKeyRead)
-def revoke_api_key(key_id: uuid.UUID, session: SessionDep, _admin: AdminDep) -> ApiKeyRead:
-    """Soft-revoke an API key. Idempotent — re-revoking is a no-op."""
+def revoke_api_key(key_id: uuid.UUID, session: SessionDep, caller: WriterDep) -> ApiKeyRead:
+    """Soft-revoke an API key. Idempotent — re-revoking is a no-op.
+
+    Writers may revoke only their own keys; admins may revoke any key.
+    """
     api_key = session.get(ApiKey, key_id)
     if api_key is None:
+        raise HTTPException(status_code=404, detail="API key not found")
+    if api_key.user_id != caller.id and not _is_admin(caller):
         raise HTTPException(status_code=404, detail="API key not found")
     if api_key.revoked_at is None:
         api_key.revoked_at = now_utc()
