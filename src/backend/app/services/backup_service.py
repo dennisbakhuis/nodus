@@ -26,13 +26,16 @@ from typing import Any, BinaryIO
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from sqlalchemy import text
 from sqlmodel import Session, SQLModel, select
 
 from app.models import (
     Alias,
+    ApiKey,
     Assessment,
     Cycle,
     Factsheet,
+    Initiative,
     MediaAsset,
     MovementEvent,
     Party,
@@ -63,6 +66,7 @@ _TABLE_ORDER: list[tuple[str, type[SQLModel]]] = [
     ("strategic_innovation_field", StrategicInnovationField),
     ("segment", Segment),
     ("user", User),
+    ("api_key", ApiKey),
     ("media_asset", MediaAsset),
     ("topic", Topic),
     ("technology", Technology),
@@ -75,6 +79,7 @@ _TABLE_ORDER: list[tuple[str, type[SQLModel]]] = [
     ("relation", Relation),
     ("person", Person),
     ("topic_person_link", TopicPersonLink),
+    ("initiative", Initiative),
     # Cycle must precede MovementEvent: MovementEvent has a nullable
     # cycle_id FK -> cycle.id, so cycle rows have to exist first or the
     # restore fails with "FOREIGN KEY constraint failed" when seed data
@@ -84,7 +89,11 @@ _TABLE_ORDER: list[tuple[str, type[SQLModel]]] = [
     ("setting", Setting),
 ]
 
-# Tables whose data is intentionally excluded from backups.
+# Tables whose data is intentionally excluded from backups (ephemeral auth
+# state). They ARE wiped during a fresh restore even though we never restore
+# them, because their rows hold FKs into `user` — leaving them in place would
+# block the user-table wipe with a FK violation. Admins re-authenticate after
+# a fresh restore.
 _EXCLUDED = {"auth_session", "mfa_challenge"}
 
 
@@ -371,7 +380,7 @@ def inspect_backup(
                     try:
                         coerced_id = uuid.UUID(row_id) if isinstance(row_id, str) else row_id
                         existing = session.get(model_cls, coerced_id)
-                    except ValueError, TypeError:
+                    except (ValueError, TypeError):
                         existing = None
             if existing is not None:
                 conflicts.append(
@@ -398,16 +407,43 @@ def inspect_backup(
 
 
 def _truncate_all(session: Session) -> None:
-    """Wipe every restorable table in reverse dependency order.
+    """Wipe every mapped table in reverse FK-dependency order.
 
-    Called inside an existing transaction; the caller commits.
+    Called inside an existing transaction; the caller commits. Wipes EVERY
+    mapped table (including auth_session, mfa_challenge, api_key, ...), not
+    just the ones in `_TABLE_ORDER` — leaving any of them in place would
+    orphan FKs to wiped users and break the user-table wipe with a
+    constraint violation. Admins re-authenticate after a fresh restore.
+
+    Issues bulk DELETEs via `SQLModel.metadata.sorted_tables` (parents-first,
+    so reversed = children-first) instead of ORM `session.delete(row)`. Bulk
+    DELETE avoids triggering autoflush on pending half-deleted state, which
+    was the root cause of "FOREIGN KEY constraint failed (raised as a result
+    of Query-invoked autoflush)" mid-truncate.
+
+    For SQLite we temporarily disable FK enforcement: the ORM-declared FKs
+    may include self-referential or future cyclic relations that no flat
+    ordering can satisfy. The pragma is restored before returning so the
+    caller's commit still validates referential integrity of the restored
+    state.
     """
-    for table_name, model_cls in reversed(_TABLE_ORDER):
-        if table_name in _EXCLUDED:
-            continue
-        for row in session.exec(select(model_cls)).all():
-            session.delete(row)
-    session.flush()
+    bind = session.get_bind()
+    is_sqlite = bind.dialect.name == "sqlite"
+    if is_sqlite:
+        session.execute(text("PRAGMA foreign_keys = OFF"))
+    try:
+        for table in reversed(SQLModel.metadata.sorted_tables):
+            session.execute(table.delete())
+        session.flush()
+        # Bulk DELETE bypasses the ORM identity map. Drop any cached
+        # references so the subsequent re-inserts from the backup don't
+        # collide with stale objects holding the same primary keys
+        # (SQLAlchemy emits "identity map already had an identity" warnings
+        # otherwise).
+        session.expunge_all()
+    finally:
+        if is_sqlite:
+            session.execute(text("PRAGMA foreign_keys = ON"))
 
 
 def restore_backup(
@@ -470,7 +506,7 @@ def restore_backup(
                         try:
                             coerced_id = uuid.UUID(row_id) if isinstance(row_id, str) else row_id
                             existing = session.get(model_cls, coerced_id)
-                        except ValueError, TypeError:
+                        except (ValueError, TypeError):
                             existing = None
 
                 key = (
