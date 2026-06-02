@@ -6,15 +6,24 @@ import io
 import json
 import uuid
 import zipfile
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session, SQLModel, select
 
+from app.models.api_key import ApiKey
+from app.models.auth_session import AuthSession
+from app.models.initiative import Initiative, InitiativeStatus
 from app.models.media_asset import MediaAsset
+from app.models.party import Party
 from app.models.segment import Segment
 from app.models.setting import Setting
+from app.models.technology import RegistryStatus, Technology
 from app.models.topic import Topic
+from app.models.user import User, UserRole
 from app.services.backup_service import (
+    _EXCLUDED,
+    _TABLE_ORDER,
     BACKUP_FORMAT_VERSION,
     BackupAuthError,
     BackupFormatError,
@@ -352,3 +361,165 @@ class TestSettingRoundTrip:
         ).first()
         assert after is not None
         assert after.value == "true"
+
+
+class TestSchemaCoverage:
+    """Every mapped table must be claimed by the backup module — either
+    exported via `_TABLE_ORDER` or explicitly skipped via `_EXCLUDED`. A new
+    SQLModel table added to the codebase without touching this module would
+    silently drop out of backups (export) AND block fresh restores (FK
+    violation against the un-wiped rows). This test fails loudly so the
+    author has to decide which list it belongs in."""
+
+    def test_every_mapped_table_is_known_to_backup_service(self) -> None:
+        import app.models  # noqa: F401  - ensure all models are registered
+
+        all_tables = {t.name for t in SQLModel.metadata.tables.values()}
+        covered = {name for name, _ in _TABLE_ORDER} | _EXCLUDED
+        missing = all_tables - covered
+        assert missing == set(), (
+            f"Tables missing from backup_service: {sorted(missing)}. "
+            "Add them to _TABLE_ORDER (to back up) or _EXCLUDED (to skip)."
+        )
+
+
+def _make_admin_with_session(session: Session) -> tuple[User, AuthSession]:
+    """Create one admin user + one active auth session referencing it.
+
+    Mirrors the prd state at the moment an admin uploads a backup for
+    fresh-restore: their just-issued auth_session row holds a user_id FK
+    to user.id and will block the user-table wipe if not handled.
+    """
+    user = User(
+        username="admin",
+        first_name="Admin",
+        last_name="User",
+        role=UserRole.Admin.value,
+        password_hash="$argon2id$dummy",
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    auth = AuthSession(
+        token_hash="dummy-token-hash-" + uuid.uuid4().hex,
+        user_id=user.id,
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+    )
+    session.add(auth)
+    session.commit()
+    session.refresh(auth)
+    return user, auth
+
+
+class TestFreshRestoreWithFkReferents:
+    """Reproduces the prd 500: fresh-restore was failing because the
+    truncate step skipped `auth_session` / `mfa_challenge` / `api_key`,
+    leaving rows whose `user_id` FK referenced rows the wipe was trying
+    to delete. The fix wipes every mapped table, not just the ones in
+    `_TABLE_ORDER`. These tests pin that behavior."""
+
+    def test_fresh_restore_with_active_auth_session_succeeds(
+        self, session: Session
+    ) -> None:
+        _make_admin_with_session(session)
+        payload = export_backup(session)
+
+        counts = restore_backup(session, payload, mode="fresh")
+        assert counts["inserted"] >= 0
+
+        assert session.exec(select(AuthSession)).all() == []
+
+    def test_fresh_restore_with_api_key_succeeds(self, session: Session) -> None:
+        user, _ = _make_admin_with_session(session)
+        api_key = ApiKey(
+            token_hash="api-hash-" + uuid.uuid4().hex,
+            token_prefix="nodus-test",
+            user_id=user.id,
+            name="ci-bot",
+            created_by_user_id=user.id,
+        )
+        session.add(api_key)
+        session.commit()
+
+        payload = export_backup(session)
+        counts = restore_backup(session, payload, mode="fresh")
+
+        assert counts["inserted"] >= 1
+        keys = session.exec(select(ApiKey)).all()
+        assert len(keys) == 1
+        assert keys[0].name == "ci-bot"
+        assert session.exec(select(AuthSession)).all() == []
+
+
+class TestFullRoundTrip:
+    """Smoke test that the export/restore pipeline preserves rows for
+    every backup-eligible table, including previously-missing ones
+    (`api_key`, `initiative`). Catches future drift between the model
+    layer and `_TABLE_ORDER`."""
+
+    def test_round_trip_preserves_user_apikey_and_initiative(
+        self, session: Session
+    ) -> None:
+        # Wipe seed segments so per-table counts are deterministic.
+        for seg in session.exec(select(Segment)).all():
+            session.delete(seg)
+        session.commit()
+
+        user, _ = _make_admin_with_session(session)
+        session.add(
+            ApiKey(
+                token_hash="rt-" + uuid.uuid4().hex,
+                token_prefix="rt-pref",
+                user_id=user.id,
+                name="round-trip-key",
+                created_by_user_id=user.id,
+            )
+        )
+        party = Party(name="ACME Labs", slug="acme-labs")
+        session.add(party)
+        session.commit()
+        session.refresh(party)
+
+        topic = Topic(canonical_name="Edge Computing", slug="edge-computing")
+        session.add(topic)
+        session.commit()
+        session.refresh(topic)
+
+        technology = Technology(
+            topic_id=topic.id,
+            registry_status=RegistryStatus.Backlog.value,
+        )
+        session.add(technology)
+        session.commit()
+        session.refresh(technology)
+
+        initiative = Initiative(
+            technology_id=technology.id,
+            title="Pilot edge cache",
+            status=InitiativeStatus.Pilot.value,
+        )
+        session.add(initiative)
+        session.commit()
+
+        payload = export_backup(session)
+        report = inspect_backup(session, payload)
+
+        assert report.table_counts.get("user", 0) == 1
+        assert report.table_counts.get("api_key", 0) == 1
+        assert report.table_counts.get("initiative", 0) == 1
+        assert report.table_counts.get("party", 0) == 1
+        assert report.table_counts.get("topic", 0) == 1
+        assert report.table_counts.get("technology", 0) == 1
+
+        counts = restore_backup(session, payload, mode="fresh")
+        assert counts["inserted"] >= 6
+
+        assert len(session.exec(select(User)).all()) == 1
+        assert len(session.exec(select(ApiKey)).all()) == 1
+        assert len(session.exec(select(Initiative)).all()) == 1
+        assert len(session.exec(select(Party)).all()) == 1
+        assert len(session.exec(select(Topic)).all()) == 1
+        assert len(session.exec(select(Technology)).all()) == 1
+        # Excluded tables stay wiped after fresh restore.
+        assert session.exec(select(AuthSession)).all() == []

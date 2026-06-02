@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
@@ -28,12 +29,25 @@ def _seed_test_segments(session: Session) -> None:
 
 @pytest.fixture(name="session")
 def session_fixture() -> Generator[Session]:
-    """Provide an in-memory SQLite session with all tables created."""
+    """Provide an in-memory SQLite session with all tables created.
+
+    Foreign-key enforcement is turned ON to match production SQLite
+    behavior — without it the tests can't reproduce FK-related bugs
+    that show up in prd (e.g. wipe/restore aborting because auth_session
+    rows still reference user.id).
+    """
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_fks(dbapi_conn: object, _: object) -> None:
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     import app.models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
