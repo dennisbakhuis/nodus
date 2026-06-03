@@ -63,7 +63,24 @@ start() {
     (cd "$REPO_ROOT/src/frontend" && exec npm run dev) >"$FRONTEND_LOG" 2>&1 &
     echo $! >"$FRONTEND_PID"
 
-    echo "Started. Stop with 'make stop'; watch logs with 'tail -f .run/*.log'."
+    # Wait briefly for Vite to report its actual URL (it may shift port if 5173
+    # is taken), so the printed link is correct and clickable.
+    local app_url="http://localhost:5173/" found
+    for _ in $(seq 1 30); do
+        found="$(grep -oE 'http://localhost:[0-9]+/?' "$FRONTEND_LOG" 2>/dev/null | head -1 || true)"
+        if [ -n "$found" ]; then
+            app_url="$found"
+            break
+        fi
+        sleep 0.2
+    done
+
+    echo
+    echo "  Nodus is running:"
+    echo "    App  →  $app_url"
+    echo "    API  →  http://localhost:8000  (docs: http://localhost:8000/docs)"
+    echo
+    echo "  Stop with 'make stop'. Logs: tail -f .run/*.log"
 }
 
 stop() {
