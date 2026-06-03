@@ -240,38 +240,42 @@ export function Sidebar({
         flexDirection: "column",
         background: "var(--color-white)",
         borderRight: "1px solid var(--color-ring-boundary)",
-        overflow: "hidden",
+        // visible (not hidden) so the floating collapse bubble can straddle the
+        // right border; the inner scroll container handles its own overflow.
+        overflow: "visible",
         fontFamily: "var(--font-family)",
         position: "relative",
       }}
     >
       {onCollapse && (
-        <div
+        <button
+          type="button"
+          onClick={onCollapse}
+          aria-label="Hide sidebar"
+          title="Hide sidebar"
           style={{
+            position: "absolute",
+            top: "var(--space-3)",
+            right: -12,
+            width: 24,
+            height: 24,
+            borderRadius: "50%",
+            background: "var(--color-white)",
+            border: "1px solid var(--color-ring-boundary)",
+            color: "var(--color-muted-text)",
+            cursor: "pointer",
             display: "flex",
-            justifyContent: "flex-end",
-            padding: "var(--space-2) var(--space-2) 0",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "var(--font-size-sm)",
+            lineHeight: 1,
+            padding: 0,
+            zIndex: 2,
+            boxShadow: "var(--shadow-sm)",
           }}
         >
-          <button
-            type="button"
-            onClick={onCollapse}
-            aria-label="Hide sidebar"
-            title="Hide sidebar"
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontSize: "var(--font-size-lg)",
-              lineHeight: 1,
-              color: "var(--color-muted-text)",
-              padding: "var(--space-1) var(--space-2)",
-              borderRadius: "var(--radius-md)",
-            }}
-          >
-            «
-          </button>
-        </div>
+          «
+        </button>
       )}
       <div
         style={{

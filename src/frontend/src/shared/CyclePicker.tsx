@@ -40,7 +40,8 @@ export function CyclePicker() {
   }, [cycles]);
 
   if (!canBrowseCycles) return null;
-  if (!cycles || cycles.length === 0) return null;
+  // Nothing to switch between with zero or one cycle — hide the selector.
+  if (!cycles || cycles.length <= 1) return null;
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const value = e.target.value;
