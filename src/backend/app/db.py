@@ -198,6 +198,18 @@ def _apply_post_create_migrations(engine_to_use: object) -> None:
             _ensure_column(session, "technology", "movement", "movement VARCHAR")
             _ensure_column(session, "technology", "created_by_id", "created_by_id VARCHAR")
 
+        person_rows = session.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='person'")
+        ).fetchall()
+        if person_rows:
+            session.execute(
+                text("CREATE UNIQUE INDEX IF NOT EXISTS uq_person_user_id ON person(user_id)")
+            )
+            session.commit()
+            from app.services.persons import backfill_person_profiles
+
+            backfill_person_profiles(session)
+
 
 def create_db_and_tables() -> None:
     """Create all database tables from SQLModel metadata.

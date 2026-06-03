@@ -12,18 +12,23 @@ import { ConfirmProvider } from "../../src/shared/ConfirmDialog";
 import type { UserAdminRead } from "../../src/api/users";
 
 const listUsers = vi.fn();
+const createUser = vi.fn();
 const updateUser = vi.fn();
 const deleteUser = vi.fn();
 const getEntraConfig = vi.fn();
 const getSetting = vi.fn();
+const getPersonCandidates = vi.fn();
+const getUserLinkedPerson = vi.fn();
 
 vi.mock("../../src/manage/api", () => ({
   listUsers: (...a: unknown[]) => listUsers(...a),
-  createUser: vi.fn(),
+  createUser: (...a: unknown[]) => createUser(...a),
   updateUser: (...a: unknown[]) => updateUser(...a),
   resetUserPassword: vi.fn(),
   deleteUser: (...a: unknown[]) => deleteUser(...a),
   getEntraConfig: (...a: unknown[]) => getEntraConfig(...a),
+  getPersonCandidates: (...a: unknown[]) => getPersonCandidates(...a),
+  getUserLinkedPerson: (...a: unknown[]) => getUserLinkedPerson(...a),
   getSetting: (...a: unknown[]) => getSetting(...a),
   upsertSetting: vi.fn(),
 }));
@@ -80,8 +85,14 @@ describe("UsersPage", () => {
     getSetting.mockResolvedValue({ key: "x", value: "false" });
     getEntraConfig.mockResolvedValue({ enabled: true, groups: [] });
     listUsers.mockResolvedValue([localUser()]);
+    createUser.mockResolvedValue(localUser());
     updateUser.mockResolvedValue(localUser());
     deleteUser.mockResolvedValue(localUser());
+    getPersonCandidates.mockResolvedValue([]);
+    getUserLinkedPerson.mockResolvedValue({
+      person: { id: "p1", full_name: "Alice Anderson", company: "Acme" },
+      topic_link_count: 0,
+    });
   });
 
   it("shows Edit and Delete actions for a local user", async () => {
@@ -118,19 +129,54 @@ describe("UsersPage", () => {
     });
   });
 
-  it("deletes a user after confirmation", async () => {
+  it("deletes a user via the delete dialog (keep profile)", async () => {
     renderPage();
     const cell = await screen.findByText("alice");
     const row = cell.closest("tr") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: "Delete" }));
 
-    const confirmBtn = await screen.findByRole("button", {
-      name: /Delete user/i,
-    });
-    fireEvent.click(confirmBtn);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete user" }));
 
     await waitFor(() => {
-      expect(deleteUser).toHaveBeenCalledWith("u-local");
+      expect(deleteUser).toHaveBeenCalledWith(
+        "u-local",
+        expect.objectContaining({ person_action: "keep" }),
+      );
+    });
+  });
+
+  it("prompts to link or create when a People record matches the name", async () => {
+    getPersonCandidates.mockResolvedValue([
+      { id: "p-match", full_name: "New Comer", company: "Acme", email: null },
+    ]);
+    renderPage();
+    await screen.findByText("alice");
+    fireEvent.click(screen.getByRole("button", { name: "Add user" }));
+
+    fireEvent.change(screen.getByLabelText(/Username/i), {
+      target: { value: "newcomer" },
+    });
+    fireEvent.change(screen.getByLabelText(/First name/i), {
+      target: { value: "New" },
+    });
+    fireEvent.change(screen.getByLabelText(/Last name/i), {
+      target: { value: "Comer" },
+    });
+    fireEvent.change(screen.getByLabelText(/Initial password/i), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create user" }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create new profile" }),
+    );
+
+    await waitFor(() => {
+      expect(createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ create_new_person: true }),
+      );
     });
   });
 

@@ -1,7 +1,10 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
+
+from app.schemas.person import PersonReadManagement
 
 
 class UserMe(BaseModel):
@@ -14,6 +17,7 @@ class UserMe(BaseModel):
     role: str
     mfa_enabled: bool = False
     must_change_password: bool = False
+    profile_incomplete: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -37,7 +41,12 @@ class UserAdminRead(BaseModel):
 
 
 class UserAdminCreate(BaseModel):
-    """Request body for admin user creation."""
+    """Request body for admin user creation.
+
+    When the new account's name matches an existing account-less Person, the
+    caller must resolve it: pass ``person_id`` to link that record, or
+    ``create_new_person=True`` to deliberately create a fresh profile.
+    """
 
     username: str
     first_name: str
@@ -45,6 +54,8 @@ class UserAdminCreate(BaseModel):
     role: str
     initial_password: str
     must_change_password: bool = True
+    person_id: uuid.UUID | None = None
+    create_new_person: bool = False
 
 
 class UserAdminUpdate(BaseModel):
@@ -62,3 +73,34 @@ class UserPasswordReset(BaseModel):
 
     new_password: str
     must_change_password: bool = True
+
+
+class UserDeleteOptions(BaseModel):
+    """Optional body for DELETE /admin/users/{id}.
+
+    ``keep`` (default) preserves the linked Person, unlinks it from the account,
+    and appends ``note`` to its notes. ``delete`` removes the Person too;
+    ``force_unlink_topics`` is required when the Person is still attached to
+    topics, otherwise the request is rejected with the topic-link count.
+    """
+
+    person_action: Literal["keep", "delete"] = "keep"
+    note: str | None = None
+    force_unlink_topics: bool = False
+
+
+class UserLinkedPersonRead(BaseModel):
+    """Preview of a user's linked Person for the delete dialog."""
+
+    person: PersonReadManagement | None = None
+    topic_link_count: int = 0
+
+
+class SelfProfileUpdate(BaseModel):
+    """PATCH body for the caller's own People profile (first-login completion)."""
+
+    full_name: str | None = None
+    company: str | None = None
+    email: str | None = None
+    department: str | None = None
+    role: str | None = None

@@ -2,11 +2,99 @@
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlmodel import Session, select
 
 from app.models.person import Person
 from app.models.topic_person_link import PersonLinkRole, TopicPersonLink
+from app.models.user import User
+
+# Sentinel so callers can distinguish "leave user_id untouched" from
+# "set user_id to None" (unlink) when updating a Person.
+UNSET: Any = object()
+
+
+def ensure_person_for_user(
+    session: Session,
+    user: User,
+    *,
+    email: str | None = None,
+    company: str | None = None,
+    department: str | None = None,
+    role: str | None = None,
+    commit: bool = True,
+) -> Person:
+    """Return the Person linked to `user`, creating one if none exists.
+
+    The auto-created profile seeds `full_name` from the user's names and leaves
+    `company` blank (an empty string satisfies the NOT NULL column); the gaps are
+    completed by the user at first login. Idempotent: a second call returns the
+    existing linked Person untouched.
+    """
+    existing = session.exec(select(Person).where(Person.user_id == user.id)).first()
+    if existing is not None:
+        return existing
+    full_name = f"{user.first_name} {user.last_name}".strip() or user.username
+    person = Person(
+        full_name=full_name,
+        company=company or "",
+        email=email,
+        department=department,
+        role=role,
+        user_id=user.id,
+    )
+    session.add(person)
+    if commit:
+        session.commit()
+        session.refresh(person)
+    return person
+
+
+def get_person_for_user(session: Session, user_id: uuid.UUID) -> Person | None:
+    """Return the Person linked to a user account, or None."""
+    return session.exec(select(Person).where(Person.user_id == user_id)).first()
+
+
+def profile_incomplete(person: Person | None) -> bool:
+    """Whether a profile still needs completion: no Person, or missing company/email."""
+    if person is None:
+        return True
+    if not (person.company or "").strip():
+        return True
+    return not (person.email or "").strip()
+
+
+def user_profile_incomplete(session: Session, user_id: uuid.UUID) -> bool:
+    """Whether the account's linked profile is incomplete (drives the first-login popup)."""
+    return profile_incomplete(get_person_for_user(session, user_id))
+
+
+def find_unlinked_person_candidates(session: Session, full_name: str) -> list[Person]:
+    """Return account-less People whose full_name matches (case-insensitive)."""
+    name = (full_name or "").strip().lower()
+    if not name:
+        return []
+    rows = session.exec(select(Person).where(Person.user_id == None)).all()  # noqa: E711
+    return [p for p in rows if p.full_name.strip().lower() == name]
+
+
+def count_topic_links_for_person(session: Session, person_id: uuid.UUID) -> int:
+    """Number of TopicPersonLink rows referencing this Person."""
+    rows = session.exec(select(TopicPersonLink).where(TopicPersonLink.person_id == person_id)).all()
+    return len(list(rows))
+
+
+def backfill_person_profiles(session: Session) -> int:
+    """Create a linked Person for every user that lacks one. Returns the count created."""
+    created = 0
+    for user in session.exec(select(User)).all():
+        if get_person_for_user(session, user.id) is None:
+            ensure_person_for_user(session, user, commit=False)
+            created += 1
+    if created:
+        session.commit()
+    return created
 
 
 def create_person(
@@ -103,6 +191,7 @@ def update_person(
     department: str | None = None,
     role: str | None = None,
     notes: str | None = None,
+    user_id: uuid.UUID | None | Any = UNSET,
 ) -> Person:
     """Update mutable fields on a Person record.
 
@@ -150,6 +239,8 @@ def update_person(
         person.role = role
     if notes is not None:
         person.notes = notes
+    if user_id is not UNSET:
+        person.user_id = user_id
     person.updated_at = datetime.now(UTC)
     session.add(person)
     session.commit()

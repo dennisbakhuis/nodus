@@ -3,7 +3,9 @@ import {
   createUser,
   deleteUser,
   getEntraConfig,
+  getPersonCandidates,
   getSetting,
+  getUserLinkedPerson,
   listUsers,
   resetUserPassword,
   updateUser,
@@ -11,13 +13,15 @@ import {
   type EntraAdminConfig,
   type UserAdminCreatePayload,
   type UserAdminRead,
+  type UserLinkedPerson,
 } from "./api";
+import { ApiError } from "../api/client";
+import type { PersonReadManagement } from "../manage/types";
 import { Field } from "../shared/Field";
 import { LoadingState } from "../shared/LoadingState";
 import { Modal } from "../shared/Modal";
 import { StatusBanner } from "../shared/StatusBanner";
 import { useAuth } from "../shared/AuthContext";
-import { useConfirm } from "../shared/ConfirmDialog";
 import styles from "./ManagePage.module.css";
 
 const HIDE_LOCAL_ADMIN_BADGE_KEY = "auth.hide_local_admin_badge";
@@ -54,9 +58,16 @@ function emptyForm(): UserAdminCreatePayload {
   };
 }
 
+type DeleteState = {
+  user: UserAdminRead;
+  info: UserLinkedPerson | null;
+  action: "keep" | "delete";
+  note: string;
+  forceUnlink: boolean;
+};
+
 export function UsersPage() {
   const { authEnabled, providers } = useAuth();
-  const confirm = useConfirm();
   const entraEnabled = providers.includes("entra");
   const [users, setUsers] = useState<UserAdminRead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +85,11 @@ export function UsersPage() {
     last_name: "",
   });
   const [editSaving, setEditSaving] = useState(false);
+  const [candidatePrompt, setCandidatePrompt] = useState<
+    PersonReadManagement[] | null
+  >(null);
+  const [deleteState, setDeleteState] = useState<DeleteState | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [entraConfig, setEntraConfig] = useState<EntraAdminConfig | null>(null);
   const [hideBadge, setHideBadge] = useState(false);
   const [savedHideBadge, setSavedHideBadge] = useState(false);
@@ -151,15 +167,49 @@ export function UsersPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+    setCreating(true);
+    try {
+      const candidates = await getPersonCandidates(
+        form.first_name,
+        form.last_name,
+      );
+      if (candidates.length > 0) {
+        setCandidatePrompt(candidates);
+        return;
+      }
+      await finalizeCreate({});
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create user");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function finalizeCreate(extra: Partial<UserAdminCreatePayload>) {
     setCreating(true);
     setError(null);
     try {
-      await createUser(form);
+      await createUser({ ...form, ...extra });
       setShowCreate(false);
       setForm(emptyForm());
+      setCandidatePrompt(null);
       await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create user");
+    } catch (err) {
+      // Backstop: the backend also refuses a silent duplicate and returns the
+      // matching candidates, so surface the same prompt.
+      const detail = err instanceof ApiError ? err.detail : undefined;
+      if (
+        detail &&
+        typeof detail === "object" &&
+        (detail as { reason?: string }).reason === "person_match"
+      ) {
+        setCandidatePrompt(
+          (detail as { candidates?: PersonReadManagement[] }).candidates ?? [],
+        );
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to create user");
+      }
     } finally {
       setCreating(false);
     }
@@ -185,26 +235,37 @@ export function UsersPage() {
     }
   }
 
-  async function handleDelete(user: UserAdminRead) {
-    const ok = await confirm({
-      title: `Delete ${user.username}?`,
-      body: (
-        <>
-          This permanently removes the account and revokes its sessions and API
-          keys. Linked people and uploaded images are kept (just unlinked). This
-          cannot be undone.
-        </>
-      ),
-      danger: true,
-      confirmLabel: "Delete user",
+  function openDelete(user: UserAdminRead) {
+    setDeleteState({
+      user,
+      info: null,
+      action: "keep",
+      note: "",
+      forceUnlink: false,
     });
-    if (!ok) return;
+    void getUserLinkedPerson(user.id)
+      .then((info) =>
+        setDeleteState((s) => (s && s.user.id === user.id ? { ...s, info } : s)),
+      )
+      .catch(() => undefined);
+  }
+
+  async function submitDelete() {
+    if (!deleteState) return;
+    setDeleting(true);
     setError(null);
     try {
-      await deleteUser(user.id);
+      await deleteUser(deleteState.user.id, {
+        person_action: deleteState.action,
+        note: deleteState.note.trim() || undefined,
+        force_unlink_topics: deleteState.forceUnlink,
+      });
+      setDeleteState(null);
       await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete user");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete user");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -521,7 +582,7 @@ export function UsersPage() {
                         <button
                           type="button"
                           className={styles.btnDanger}
-                          onClick={() => void handleDelete(u)}
+                          onClick={() => openDelete(u)}
                         >
                           Delete
                         </button>
@@ -748,6 +809,188 @@ export function UsersPage() {
           </div>
         </div>
       )}
+
+      <Modal
+        open={candidatePrompt !== null}
+        onClose={() => setCandidatePrompt(null)}
+        title="Existing people match this name"
+      >
+        <p className={styles.sectionDesc}>
+          One or more People records match{" "}
+          <strong>
+            {form.first_name} {form.last_name}
+          </strong>
+          . Link the new account to an existing record, or create a fresh
+          profile.
+        </p>
+        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {candidatePrompt?.map((c) => (
+            <li
+              key={c.id}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "var(--space-3)",
+                padding: "var(--space-2) 0",
+                borderBottom: "1px solid var(--color-border)",
+              }}
+            >
+              <span>
+                <strong>{c.full_name}</strong>
+                {c.company ? ` — ${c.company}` : ""}
+                {c.email ? ` · ${c.email}` : ""}
+              </span>
+              <button
+                type="button"
+                className={styles.btnSecondary}
+                disabled={creating}
+                onClick={() => void finalizeCreate({ person_id: c.id })}
+              >
+                Link this person
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className={styles.actionsRow}>
+          <button
+            type="button"
+            className={styles.btnPrimary}
+            disabled={creating}
+            onClick={() => void finalizeCreate({ create_new_person: true })}
+          >
+            Create new profile
+          </button>
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            onClick={() => setCandidatePrompt(null)}
+          >
+            Cancel
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={deleteState !== null}
+        onClose={() => setDeleteState(null)}
+        title={
+          deleteState ? `Delete ${deleteState.user.username}?` : "Delete user"
+        }
+      >
+        {deleteState && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--space-3)",
+            }}
+          >
+            <p className={styles.sectionDesc}>
+              This permanently removes the account and revokes its sessions and
+              API keys. This cannot be undone.
+            </p>
+            {deleteState.info?.person ? (
+              <div>
+                Linked profile:{" "}
+                <strong>{deleteState.info.person.full_name}</strong>
+                {deleteState.info.topic_link_count > 0 && (
+                  <> · linked to {deleteState.info.topic_link_count} topic(s)</>
+                )}
+              </div>
+            ) : (
+              <div className={styles.sectionDesc}>No linked People profile.</div>
+            )}
+            <fieldset
+              style={{
+                border: "none",
+                padding: 0,
+                margin: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name="person_action"
+                  checked={deleteState.action === "keep"}
+                  onChange={() =>
+                    setDeleteState((s) => s && { ...s, action: "keep" })
+                  }
+                />
+                Keep the People profile (unlink from the account)
+              </label>
+              <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name="person_action"
+                  checked={deleteState.action === "delete"}
+                  onChange={() =>
+                    setDeleteState((s) => s && { ...s, action: "delete" })
+                  }
+                />
+                Also delete the People profile
+              </label>
+            </fieldset>
+            {deleteState.action === "keep" && (
+              <Field label="Note (optional)">
+                {({ id }) => (
+                  <textarea
+                    id={id}
+                    className={styles.input}
+                    rows={2}
+                    value={deleteState.note}
+                    onChange={(e) =>
+                      setDeleteState((s) => s && { ...s, note: e.target.value })
+                    }
+                    style={{ width: "100%" }}
+                  />
+                )}
+              </Field>
+            )}
+            {deleteState.action === "delete" &&
+              (deleteState.info?.topic_link_count ?? 0) > 0 && (
+                <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={deleteState.forceUnlink}
+                    onChange={(e) =>
+                      setDeleteState(
+                        (s) => s && { ...s, forceUnlink: e.target.checked },
+                      )
+                    }
+                  />
+                  Remove the person from {deleteState.info?.topic_link_count}{" "}
+                  topic(s) first
+                </label>
+              )}
+            <div className={styles.actionsRow}>
+              <button
+                type="button"
+                className={styles.btnDanger}
+                disabled={
+                  deleting ||
+                  (deleteState.action === "delete" &&
+                    (deleteState.info?.topic_link_count ?? 0) > 0 &&
+                    !deleteState.forceUnlink)
+                }
+                onClick={() => void submitDelete()}
+              >
+                {deleting ? "Deleting…" : "Delete user"}
+              </button>
+              <button
+                type="button"
+                className={styles.btnSecondary}
+                onClick={() => setDeleteState(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

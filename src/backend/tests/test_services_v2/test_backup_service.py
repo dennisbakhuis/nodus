@@ -523,3 +523,55 @@ class TestFullRoundTrip:
         assert len(session.exec(select(Technology)).all()) == 1
         # Excluded tables stay wiped after fresh restore.
         assert session.exec(select(AuthSession)).all() == []
+
+
+class TestUserPersonLinkRestore:
+    def test_fresh_restore_preserves_person_user_link(self, session: Session) -> None:
+        from app.models.person import Person
+
+        user = User(
+            username="linked-user",
+            first_name="Linked",
+            last_name="User",
+            role=UserRole.Writer.value,
+            password_hash="x",
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        person = Person(full_name="Linked User", company="Acme", user_id=user.id)
+        session.add(person)
+        session.commit()
+        person_id = person.id
+
+        payload = export_backup(session)
+        restore_backup(session, payload, mode="fresh")
+
+        restored = session.get(Person, person_id)
+        assert restored is not None
+        assert restored.user_id == user.id
+
+    def test_fresh_restore_backfills_profiles_for_legacy_backup(self, session: Session) -> None:
+        from app.models.person import Person
+        from app.services.persons import get_person_for_user
+
+        # Legacy shape: a user with no linked Person, plus a standalone person.
+        user = User(
+            username="legacy-user",
+            first_name="Legacy",
+            last_name="User",
+            role=UserRole.Reader.value,
+            password_hash="x",
+        )
+        session.add(user)
+        session.add(Person(full_name="Standalone Person", company="Acme"))
+        session.commit()
+        user_id = user.id
+        assert get_person_for_user(session, user_id) is None
+
+        payload = export_backup(session)
+        restore_backup(session, payload, mode="fresh")
+
+        # Backfill gave the restored user a profile; the standalone survives.
+        assert get_person_for_user(session, user_id) is not None
+        assert len(session.exec(select(Person)).all()) == 2

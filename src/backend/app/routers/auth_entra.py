@@ -39,6 +39,7 @@ from app.auth_entra import (
 from app.db import SessionDep
 from app.models.auth_session import AuthSession
 from app.models.user import User, UserRole
+from app.services.persons import ensure_person_for_user
 from app.time_utils import now_utc
 
 router = APIRouter(prefix="/auth/entra", tags=["auth"])
@@ -316,6 +317,12 @@ def _resolve_or_provision_user(
     session.add(user)
     session.commit()
     session.refresh(user)
+    claim_email = claims.get("email")
+    ensure_person_for_user(
+        session,
+        user,
+        email=str(claim_email) if claim_email else None,
+    )
     _log.info(
         "Entra JIT provisioning: created user %s (oid=%s, role=%s)",
         user.username,

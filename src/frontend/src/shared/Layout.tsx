@@ -11,6 +11,7 @@ import { ExportMenu } from "../radar/ExportMenu";
 import { DataExportMenu } from "../radar/DataExportMenu";
 import { HelpButton } from "../help/HelpButton";
 import { HelpPanel } from "../help/HelpPanel";
+import { ProfileCompletionModal } from "./ProfileCompletionModal";
 
 function usePrefersReducedMotion(): boolean {
   const [prefers, setPrefers] = useState(false);
@@ -261,6 +262,7 @@ export function Layout({ children }: Props) {
       </main>
 
       <HelpPanel />
+      <ProfileCompletionModal />
 
       <style>{`
         @keyframes nodus-demo-timer {

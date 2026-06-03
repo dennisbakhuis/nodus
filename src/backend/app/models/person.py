@@ -20,6 +20,8 @@ class Person(SQLModel, table=True):
     department: str | None = Field(default=None)
     role: str | None = Field(default=None)
     notes: str | None = Field(default=None)
-    user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id", index=True)
+    user_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", unique=True, index=True
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

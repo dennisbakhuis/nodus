@@ -25,6 +25,8 @@ export type AuthUser = {
   last_name: string;
   role: UserRole;
   mfa_enabled: boolean;
+  /** True when the linked People profile still needs required fields filled in. */
+  profile_incomplete?: boolean;
 };
 
 export type LoginOutcome =

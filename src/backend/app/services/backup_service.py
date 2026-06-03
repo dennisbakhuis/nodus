@@ -566,6 +566,13 @@ def restore_backup(
             if asset_id not in restored_asset_ids:
                 raise BackupFormatError(f"Media blob {name!r} has no matching MediaAsset row")
 
+        if mode == "fresh":
+            # Legacy backups predate User↔Person linking; give every restored
+            # account a profile so the "one profile per user" invariant holds.
+            from app.services.persons import backfill_person_profiles
+
+            backfill_person_profiles(session)
+
         session.commit()
     except Exception:
         session.rollback()

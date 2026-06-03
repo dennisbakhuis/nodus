@@ -12,6 +12,9 @@ type Props = {
   size?: Size;
   headerActions?: ReactNode;
   hideHeader?: boolean;
+  /** When false, Escape / backdrop clicks don't close it and the close button
+   * is hidden — for blocking flows the user must complete (e.g. profile setup). */
+  dismissible?: boolean;
 };
 
 export function Modal({
@@ -23,6 +26,7 @@ export function Modal({
   size = "default",
   headerActions,
   hideHeader = false,
+  dismissible = true,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -72,7 +76,7 @@ export function Modal({
   }, [onClose]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !dismissible) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         onClose();
@@ -80,7 +84,17 @@ export function Modal({
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, dismissible]);
+
+  // For blocking modals, swallow the native dialog `cancel` (Escape) so the
+  // browser can't dismiss it out from under a flow the user must complete.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || dismissible) return;
+    const onCancel = (e: Event) => e.preventDefault();
+    dialog.addEventListener("cancel", onCancel);
+    return () => dialog.removeEventListener("cancel", onCancel);
+  }, [dismissible, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -159,6 +173,7 @@ export function Modal({
         // cursor (e.g. a header NavLink) once the dialog is gone. The
         // synthetic ``click`` that follows a backdrop mousedown otherwise
         // targets the dialog and is swallowed by the top-layer overlay.
+        if (!dismissible) return;
         if (e.button !== 0) return;
         if (e.target !== dialogRef.current) return;
         const x = e.clientX;
@@ -199,6 +214,7 @@ export function Modal({
             }}
           >
             {headerActions}
+            {dismissible && (
             <button
               ref={closeBtnRef}
               onClick={onClose}
@@ -229,6 +245,7 @@ export function Modal({
             >
               ✕
             </button>
+            )}
           </div>
         </div>
       )}
