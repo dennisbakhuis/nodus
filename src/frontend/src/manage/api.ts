@@ -79,6 +79,15 @@ export { getSetting, listSettings, upsertSetting } from "../api/settings";
 export type { VisibilityConfig } from "../api/visibility";
 export { getVisibilityConfig, saveVisibilityConfig } from "../api/visibility";
 
+export type { CapabilityConfig } from "../api/capabilities";
+export {
+  CAPABILITY_KEYS,
+  DEFAULT_CAPABILITIES,
+  getCapabilityConfig,
+  roleHasCapability,
+  saveCapabilityConfig,
+} from "../api/capabilities";
+
 export { getMediaUrl, uploadMedia } from "../api/media";
 
 export type {

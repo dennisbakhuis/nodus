@@ -203,3 +203,63 @@ def test_entra_admin_config_returns_group_map(
     assert body["enabled"] is True
     mapping = {g["role"]: g["group_id"] for g in body["groups"]}
     assert mapping == {"admin": "group-admin", "writer": "group-writer"}
+
+
+def test_cannot_create_user_with_public_reader_role(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+) -> None:
+    """public_reader is the implicit anonymous role and must not be assignable."""
+    _, admin_token = make_user(role=UserRole.Admin)
+    response = anon_client.post(
+        "/api/admin/users",
+        headers=auth_header(admin_token),
+        json={
+            "username": "newbie",
+            "first_name": "New",
+            "last_name": "Bie",
+            "role": "public_reader",
+            "initial_password": "secret123",
+        },
+    )
+    assert response.status_code == 400
+    assert "public_reader" in response.json()["detail"]
+
+
+def test_cannot_update_user_role_to_public_reader(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+) -> None:
+    _, admin_token = make_user(role=UserRole.Admin)
+    target, _ = make_user(role=UserRole.Reader)
+    response = anon_client.patch(
+        f"/api/admin/users/{target.id}",
+        headers=auth_header(admin_token),
+        json={"role": "public_reader"},
+    )
+    assert response.status_code == 400
+    assert "public_reader" in response.json()["detail"]
+
+
+def test_assignable_roles_still_accepted(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+) -> None:
+    _, admin_token = make_user(role=UserRole.Admin)
+    for role in ("reader", "writer", "admin"):
+        response = anon_client.post(
+            "/api/admin/users",
+            headers=auth_header(admin_token),
+            json={
+                "username": f"acc_{role}",
+                "first_name": "Acc",
+                "last_name": "Ount",
+                "role": role,
+                "initial_password": "secret123",
+            },
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["role"] == role

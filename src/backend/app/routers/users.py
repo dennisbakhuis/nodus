@@ -27,11 +27,28 @@ router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 _VALID_ROLES = {r.value for r in UserRole}
 
 
+_ASSIGNABLE_ROLES = _VALID_ROLES - {UserRole.PublicReader.value}
+
+
 def _validate_role(role: str) -> None:
-    if role not in _VALID_ROLES:
+    """Validate an account role for assignment.
+
+    `public_reader` is the implicit role of anonymous, not-logged-in visitors and
+    must never be stored on an account, so it is rejected here even though it is a
+    valid `UserRole` value.
+    """
+    if role == UserRole.PublicReader.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown role '{role}'. Valid: {sorted(_VALID_ROLES)}",
+            detail=(
+                "Role 'public_reader' is the implicit role for anonymous visitors "
+                "and cannot be assigned to an account."
+            ),
+        )
+    if role not in _ASSIGNABLE_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown role '{role}'. Valid: {sorted(_ASSIGNABLE_ROLES)}",
         )
 
 

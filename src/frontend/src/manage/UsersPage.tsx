@@ -22,8 +22,9 @@ import styles from "./ManagePage.module.css";
 
 const HIDE_LOCAL_ADMIN_BADGE_KEY = "auth.hide_local_admin_badge";
 
+// `public_reader` is intentionally absent: it is the implicit role of anonymous
+// visitors and is rejected by the backend if assigned to an account.
 const ROLE_OPTIONS: { value: string; label: string }[] = [
-  { value: "public_reader", label: "Public reader" },
   { value: "reader", label: "Reader" },
   { value: "writer", label: "Writer" },
   { value: "admin", label: "Admin" },

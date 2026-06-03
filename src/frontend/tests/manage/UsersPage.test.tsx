@@ -167,4 +167,14 @@ describe("UsersPage", () => {
     expect(screen.queryByText("Entra group mapping")).toBeNull();
     expect(getEntraConfig).not.toHaveBeenCalled();
   });
+
+  it("does not offer public_reader as a create-user role", async () => {
+    renderPage();
+    await screen.findByText("alice");
+    fireEvent.click(screen.getByRole("button", { name: "Add user" }));
+    const roleSelect = screen.getByLabelText("Role") as HTMLSelectElement;
+    const values = Array.from(roleSelect.options).map((o) => o.value);
+    expect(values).toEqual(["reader", "writer", "admin"]);
+    expect(values).not.toContain("public_reader");
+  });
 });

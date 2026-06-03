@@ -3,6 +3,7 @@ import { Layout } from "./shared/Layout";
 import { AuthCallbackPage } from "./shared/AuthCallbackPage";
 import { AuthProvider } from "./shared/AuthContext";
 import { ProtectedRoute } from "./shared/ProtectedRoute";
+import { CapabilityRoute } from "./shared/CapabilityRoute";
 import { ConfirmProvider } from "./shared/ConfirmDialog";
 import { ErrorBoundary } from "./shared/ErrorBoundary";
 import { ExportProvider } from "./shared/ExportContext";
@@ -37,7 +38,14 @@ function RoutedContent() {
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/radar" element={<RadarPage />} />
         <Route path="/radar/:slug" element={<RadarPage />} />
-        <Route path="/list" element={<ListPage />} />
+        <Route
+          path="/list"
+          element={
+            <CapabilityRoute capability="canViewList">
+              <ListPage />
+            </CapabilityRoute>
+          }
+        />
         {/* /manage/technologies merged into /list. The redirect is kept on
             the outer path too so any deep link "/manage/technologies?..."
             forwards cleanly. */}

@@ -22,8 +22,10 @@ describe("App", () => {
     );
 
     expect(screen.getByRole("link", { name: "Radar" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "List" })).toBeInTheDocument();
-    // "Manage" only appears for writers/admins; the smoke test runs anonymous.
+    // "List" requires the list_view capability, which excludes public readers
+    // by default; "Manage" only appears for writers/admins. The smoke test runs
+    // anonymous, so neither should be present.
+    expect(screen.queryByRole("link", { name: "List" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Manage" })).toBeNull();
   });
 });

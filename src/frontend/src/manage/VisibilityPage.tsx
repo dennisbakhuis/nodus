@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  DEFAULT_CAPABILITIES,
+  getCapabilityConfig,
   getVisibilityConfig,
+  saveCapabilityConfig,
   saveVisibilityConfig,
+  type CapabilityConfig,
   type VisibilityConfig,
 } from "./api";
 import { LoadingState } from "../shared/LoadingState";
@@ -103,12 +107,44 @@ function mergeWithDefaults(saved: VisibilityConfig): VisibilityConfig {
   return out;
 }
 
+// View affordances on the public/radar surface, gated per role. Mirrors
+// DEFAULT_CAPABILITIES on the backend.
+const CAPABILITIES: FieldDef[] = [
+  {
+    path: "cycle_selector",
+    label: "Cycle selector",
+    description:
+      "Switch between the active cycle and historical cycles in the radar.",
+  },
+  {
+    path: "list_view",
+    label: "List view",
+    description:
+      "Reach the dense table view at /list. The radar is always available.",
+  },
+];
+
+function mergeCapabilities(saved: CapabilityConfig): CapabilityConfig {
+  const out: CapabilityConfig = { ...DEFAULT_CAPABILITIES };
+  for (const [k, v] of Object.entries(saved)) {
+    if (Array.isArray(v)) out[k] = v;
+  }
+  return out;
+}
+
 export function VisibilityPage() {
   const [config, setConfig] = useState<VisibilityConfig>({});
   const [savedConfig, setSavedConfig] = useState<VisibilityConfig>({});
+  const [capConfig, setCapConfig] = useState<CapabilityConfig>({});
+  const [savedCapConfig, setSavedCapConfig] = useState<CapabilityConfig>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [capSaving, setCapSaving] = useState(false);
   const [status, setStatus] = useState<{
+    kind: "ok" | "err";
+    msg: string;
+  } | null>(null);
+  const [capStatus, setCapStatus] = useState<{
     kind: "ok" | "err";
     msg: string;
   } | null>(null);
@@ -117,11 +153,17 @@ export function VisibilityPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const remote = await getVisibilityConfig();
-        const merged = mergeWithDefaults(remote);
+        const [remote, remoteCaps] = await Promise.all([
+          getVisibilityConfig(),
+          getCapabilityConfig(),
+        ]);
         if (cancelled) return;
+        const merged = mergeWithDefaults(remote);
         setConfig(merged);
         setSavedConfig(merged);
+        const mergedCaps = mergeCapabilities(remoteCaps);
+        setCapConfig(mergedCaps);
+        setSavedCapConfig(mergedCaps);
       } catch (e) {
         if (cancelled) return;
         setStatus({
@@ -141,10 +183,26 @@ export function VisibilityPage() {
     () => JSON.stringify(config) !== JSON.stringify(savedConfig),
     [config, savedConfig],
   );
+  const capDirty = useMemo(
+    () => JSON.stringify(capConfig) !== JSON.stringify(savedCapConfig),
+    [capConfig, savedCapConfig],
+  );
 
   function toggle(path: string, role: string) {
     setConfig((prev) => {
       const current = prev[path] ?? DEFAULT_FIELD_ROLES[path] ?? [];
+      const next = current.includes(role)
+        ? current.filter((r) => r !== role)
+        : [...current, role];
+      // Always keep admin selected; it's the failsafe.
+      const guarded = next.includes("admin") ? next : [...next, "admin"];
+      return { ...prev, [path]: guarded };
+    });
+  }
+
+  function toggleCapability(path: string, role: string) {
+    setCapConfig((prev) => {
+      const current = prev[path] ?? DEFAULT_CAPABILITIES[path] ?? [];
       const next = current.includes(role)
         ? current.filter((r) => r !== role)
         : [...current, role];
@@ -171,8 +229,29 @@ export function VisibilityPage() {
     }
   }
 
+  async function handleCapSave() {
+    setCapSaving(true);
+    setCapStatus(null);
+    try {
+      await saveCapabilityConfig(capConfig);
+      setSavedCapConfig(capConfig);
+      setCapStatus({ kind: "ok", msg: "Saved." });
+    } catch (e) {
+      setCapStatus({
+        kind: "err",
+        msg: e instanceof Error ? e.message : "Save failed",
+      });
+    } finally {
+      setCapSaving(false);
+    }
+  }
+
   function reset() {
     setConfig(DEFAULT_FIELD_ROLES);
+  }
+
+  function resetCapabilities() {
+    setCapConfig(DEFAULT_CAPABILITIES);
   }
 
   if (loading) return <LoadingState>Loading visibility config…</LoadingState>;
@@ -266,6 +345,95 @@ export function VisibilityPage() {
             {saving ? "Saving…" : "Save"}
           </button>
           <button className={styles.btnSecondary} onClick={reset} type="button">
+            Reset to defaults
+          </button>
+        </div>
+      </section>
+
+      <div className={styles.header}>
+        <h2>View capabilities</h2>
+        <p>
+          Choose which roles can use each part of the public surface. Anonymous
+          visitors are treated as “public reader”, so unchecking that column
+          hides the affordance from not-logged-in visitors. Admins always have
+          access.
+        </p>
+      </div>
+
+      <section className={styles.section}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              {ROLES.map((r) => (
+                <th key={r.value} style={{ textAlign: "center" }}>
+                  {r.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {CAPABILITIES.map((cap) => {
+              const roles =
+                capConfig[cap.path] ?? DEFAULT_CAPABILITIES[cap.path] ?? [];
+              return (
+                <tr key={cap.path}>
+                  <td>
+                    <strong>{cap.label}</strong>
+                    <div
+                      style={{
+                        color: "var(--color-muted-text)",
+                        fontSize: 12,
+                        marginTop: 2,
+                      }}
+                    >
+                      {cap.description}
+                    </div>
+                  </td>
+                  {ROLES.map((r) => {
+                    const checked = roles.includes(r.value);
+                    const isAdmin = r.value === "admin";
+                    return (
+                      <td key={r.value} style={{ textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={checked || isAdmin}
+                          disabled={isAdmin}
+                          onChange={() => toggleCapability(cap.path, r.value)}
+                          aria-label={`Allow ${r.label} to use ${cap.label}`}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div className={styles.actionsRow}>
+          {capStatus && (
+            <span
+              className={
+                capStatus.kind === "ok" ? styles.statusOk : styles.statusErr
+              }
+            >
+              {capStatus.msg}
+            </span>
+          )}
+          <button
+            className={styles.btnPrimary}
+            onClick={() => void handleCapSave()}
+            disabled={capSaving || !capDirty}
+            type="button"
+          >
+            {capSaving ? "Saving…" : "Save"}
+          </button>
+          <button
+            className={styles.btnSecondary}
+            onClick={resetCapabilities}
+            type="button"
+          >
             Reset to defaults
           </button>
         </div>
