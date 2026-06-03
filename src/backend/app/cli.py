@@ -23,8 +23,9 @@ Commands
 ``seed [--settings] [--users] [--movements] [--all]``
     Run one or more seed steps. ``--users`` is refused outside ``NODUS_ENV in
     {dev, test}`` to keep the demo-password accounts out of production.
-``backfill [--hero-images] [--all]``
-    Run one or more backfill steps. Idempotent.
+``backfill [--hero-images] [--person-profiles] [--all]``
+    Run one or more backfill steps. Idempotent. ``--person-profiles`` gives every
+    account that lacks one a linked People profile (local, Entra, or restored).
 ``create-admin --username <name> [--first-name <fn>] [--last-name <ln>] [--force]``
     Create a local admin user, prompting for the password via ``getpass``.
     Refuses to clobber an existing user unless ``--force`` is passed. Use this
@@ -80,9 +81,14 @@ def _cmd_db_reset(args: argparse.Namespace) -> int:
         return 2
     from sqlmodel import SQLModel
 
-    from app.db import DB_FILE, IS_SQLITE, _apply_post_create_migrations, engine
-
     import app.models  # noqa: F401 — register every SQLModel table on metadata
+    from app.db import (
+        DB_FILE,
+        IS_SQLITE,
+        _apply_post_create_migrations,
+        _ensure_person_profiles,
+        engine,
+    )
 
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
@@ -90,6 +96,7 @@ def _cmd_db_reset(args: argparse.Namespace) -> int:
         _apply_post_create_migrations(engine)
         if DB_FILE and os.path.exists(DB_FILE):
             logger.warning("Truncated database at: %s", DB_FILE)
+    _ensure_person_profiles(engine)
     logger.info("Recreated empty schema.")
     return 0
 
@@ -221,16 +228,22 @@ def _cmd_restore(args: argparse.Namespace) -> int:
 def _cmd_backfill(args: argparse.Namespace) -> int:
     from app.db import engine
     from app.seed.importer import relink_hero_images
+    from app.services.persons import backfill_person_profiles
 
     targets = _resolve_backfill_targets(args)
     if not targets:
-        logger.error("No backfill targets selected. Pass --hero-images or --all.")
+        logger.error(
+            "No backfill targets selected. Pass --hero-images, --person-profiles, or --all."
+        )
         return 2
 
     with Session(engine) as session:
         if "hero-images" in targets:
             relink_hero_images(session)
             logger.info("Relinked hero images.")
+        if "person-profiles" in targets:
+            created = backfill_person_profiles(session)
+            logger.info("Backfilled People profiles: created %d.", created)
     return 0
 
 
@@ -250,8 +263,15 @@ def _resolve_seed_targets(args: argparse.Namespace) -> set[str]:
 
 def _resolve_backfill_targets(args: argparse.Namespace) -> set[str]:
     if args.all:
-        return {"hero-images"}
-    return {name for name, on in (("hero-images", args.hero_images),) if on}
+        return {"hero-images", "person-profiles"}
+    return {
+        name
+        for name, on in (
+            ("hero-images", args.hero_images),
+            ("person-profiles", args.person_profiles),
+        )
+        if on
+    }
 
 
 def _db_path() -> str:
@@ -293,6 +313,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     backfill = sub.add_parser("backfill", help="Idempotent post-seed backfills")
     backfill.add_argument("--hero-images", action="store_true", help="Relink hero images")
+    backfill.add_argument(
+        "--person-profiles",
+        action="store_true",
+        dest="person_profiles",
+        help="Create a linked People profile for every account that lacks one",
+    )
     backfill.add_argument("--all", action="store_true", help="Run every backfill step")
     backfill.set_defaults(func=_cmd_backfill)
 

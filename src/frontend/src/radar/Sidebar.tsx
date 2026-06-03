@@ -16,6 +16,7 @@ import { useAuth } from "../shared/AuthContext";
 import { Chip as SharedChip } from "../shared/Chip";
 import { CyclePicker } from "../shared/CyclePicker";
 import { NodusFooterLink } from "../shared/NodusFooterLink";
+import { ResizeHandle, useResizableWidth } from "../shared/useResizableWidth";
 import { useReadOnlyRadar } from "./ReadOnlyRadarContext";
 import { useConfirm } from "../shared/ConfirmDialog";
 import {
@@ -68,6 +69,8 @@ type Props = {
   shapeMode?: ShapeMode;
   onShapeModeChange?: (mode: ShapeMode) => void;
   onSegmentsChanged?: () => void;
+  /** When provided, render a collapse control that hides the sidebar (radar only). */
+  onCollapse?: () => void;
 };
 
 const ZOOM_STEP_PERCENT = 10;
@@ -91,10 +94,15 @@ export function Sidebar({
   shapeMode,
   onShapeModeChange,
   onSegmentsChanged,
+  onCollapse,
 }: Props) {
   const isList = variant === "list";
   const { isAdmin, isWriter } = useAuth();
   const readOnly = useReadOnlyRadar();
+  const { width, onPointerDown, reset } = useResizableWidth(
+    "radar.sidebar.width",
+    { min: 180, max: 420, initial: 200 },
+  );
   const [segmentEditMode, setSegmentEditMode] = useState(false);
   const showColorPicker =
     !isList && colorMode !== undefined && onColorModeChange !== undefined;
@@ -226,7 +234,7 @@ export function Sidebar({
   return (
     <aside
       style={{
-        width: 200,
+        width,
         flexShrink: 0,
         display: "flex",
         flexDirection: "column",
@@ -234,8 +242,37 @@ export function Sidebar({
         borderRight: "1px solid var(--color-ring-boundary)",
         overflow: "hidden",
         fontFamily: "var(--font-family)",
+        position: "relative",
       }}
     >
+      {onCollapse && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            padding: "var(--space-2) var(--space-2) 0",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onCollapse}
+            aria-label="Hide sidebar"
+            title="Hide sidebar"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "var(--font-size-lg)",
+              lineHeight: 1,
+              color: "var(--color-muted-text)",
+              padding: "var(--space-1) var(--space-2)",
+              borderRadius: "var(--radius-md)",
+            }}
+          >
+            «
+          </button>
+        </div>
+      )}
       <div
         style={{
           flex: 1,
@@ -683,6 +720,8 @@ export function Sidebar({
         )}
       </div>
       <NodusFooterLink />
+
+      <ResizeHandle onPointerDown={onPointerDown} onDoubleClick={reset} />
     </aside>
   );
 }

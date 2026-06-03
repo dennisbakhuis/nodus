@@ -47,6 +47,7 @@ from app.routers import (
     users_router,
 )
 from app.schemas import HealthResponse
+from app.services.persons import ensure_person_for_user
 
 _log = logging.getLogger("app.main")
 
@@ -192,16 +193,17 @@ def seed_bootstrap_admin(session: Session) -> None:
     if existing is not None:
         _log.info("Bootstrap admin %r already exists; skipping.", username)
         return
-    session.add(
-        User(
-            username=username,
-            first_name="Admin",
-            last_name="User",
-            role=UserRole.Admin.value,
-            password_hash=hash_password(password),
-        )
+    admin = User(
+        username=username,
+        first_name="Admin",
+        last_name="User",
+        role=UserRole.Admin.value,
+        password_hash=hash_password(password),
     )
+    session.add(admin)
     session.commit()
+    session.refresh(admin)
+    ensure_person_for_user(session, admin)
     _log.info("Created bootstrap admin %r.", username)
 
 

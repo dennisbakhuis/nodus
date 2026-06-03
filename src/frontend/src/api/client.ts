@@ -90,9 +90,19 @@ class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Parsed JSON response body when available — e.g. FastAPI's `{ detail }`. */
+    public readonly body?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
+  }
+
+  /** The FastAPI `detail` payload, if the error body carried one. */
+  get detail(): unknown {
+    if (this.body && typeof this.body === "object" && "detail" in this.body) {
+      return (this.body as { detail: unknown }).detail;
+    }
+    return undefined;
   }
 }
 
@@ -110,9 +120,11 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
+    const body = await response.json().catch(() => undefined);
     throw new ApiError(
       response.status,
       `API error ${response.status}: ${response.statusText}`,
+      body,
     );
   }
 

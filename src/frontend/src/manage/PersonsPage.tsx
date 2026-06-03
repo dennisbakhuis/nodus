@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createPerson, deletePerson, listPersons, updatePerson } from "./api";
+import {
+  createPerson,
+  deletePerson,
+  listPersons,
+  listUsers,
+  updatePerson,
+} from "./api";
+import type { UserAdminRead } from "./api";
 import type { PersonReadManagement } from "./types";
 import styles from "./ManagePage.module.css";
 import { useConfirm } from "../shared/ConfirmDialog";
@@ -46,6 +53,24 @@ export function PersonsPage() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [users, setUsers] = useState<UserAdminRead[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listUsers()
+      .then((u) => {
+        if (!cancelled) setUsers(u);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const linkedUserIds = useMemo(
+    () => new Set(persons.map((p) => p.user_id).filter(Boolean) as string[]),
+    [persons],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -134,6 +159,16 @@ export function PersonsPage() {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleLink(p: PersonReadManagement, userId: string | null) {
+    setError(null);
+    try {
+      await updatePerson(p.id, { user_id: userId });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to link account");
     }
   }
 
@@ -333,6 +368,7 @@ export function PersonsPage() {
               <th>Role</th>
               <th>Department</th>
               <th>Email</th>
+              <th>Linked account</th>
               <th aria-label="Actions" />
             </tr>
           </thead>
@@ -340,7 +376,7 @@ export function PersonsPage() {
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   style={{
                     color: "var(--color-muted-text)",
                     padding: "var(--space-4)",
@@ -363,6 +399,32 @@ export function PersonsPage() {
                     {p.department ?? <span style={{ opacity: 0.6 }}>—</span>}
                   </td>
                   <td>{p.email ?? <span style={{ opacity: 0.6 }}>—</span>}</td>
+                  <td>
+                    <select
+                      className={styles.input}
+                      aria-label={`Linked account for ${p.full_name}`}
+                      value={p.user_id ?? ""}
+                      onChange={(e) =>
+                        void handleLink(p, e.target.value || null)
+                      }
+                    >
+                      <option value="">— none —</option>
+                      {users.map((u) => (
+                        <option
+                          key={u.id}
+                          value={u.id}
+                          disabled={
+                            u.id !== p.user_id && linkedUserIds.has(u.id)
+                          }
+                        >
+                          {u.username}
+                          {u.id !== p.user_id && linkedUserIds.has(u.id)
+                            ? " (linked)"
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td>
                     <button
                       type="button"

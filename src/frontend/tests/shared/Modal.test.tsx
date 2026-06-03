@@ -69,6 +69,38 @@ describe("Modal", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("hides the close button and ignores Escape when not dismissible", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(
+      withRouter(
+        <Modal open title="Blocking" onClose={onClose} dismissible={false}>
+          <p>Content</p>
+        </Modal>,
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Close modal" })).toBeNull();
+    await user.keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("does not close on backdrop click when not dismissible", () => {
+    const onClose = vi.fn();
+    render(
+      withRouter(
+        <Modal open title="Blocking" onClose={onClose} dismissible={false}>
+          <p>Content</p>
+        </Modal>,
+      ),
+    );
+    fireEvent.mouseDown(screen.getByRole("dialog"), {
+      button: 0,
+      clientX: 1,
+      clientY: 1,
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("has accessible dialog role and aria-labelledby", () => {
     render(
       withRouter(

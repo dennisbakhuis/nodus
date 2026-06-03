@@ -19,6 +19,24 @@ if (typeof SVGElement !== "undefined") {
     () => ({ x: 0, y: 0, width: 50, height: 14 });
 }
 
+// JSDOM doesn't implement PointerEvent or pointer capture; the resizable
+// sidebar handles use them. Provide minimal polyfills so fireEvent.pointerDown
+// reaches React handlers and setPointerCapture is a no-op.
+if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    pointerId: number;
+    constructor(type: string, props: PointerEventInit = {}) {
+      super(type, props);
+      this.pointerId = (props as { pointerId?: number }).pointerId ?? 0;
+    }
+  }
+  window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
+}
+if (typeof Element !== "undefined") {
+  Element.prototype.setPointerCapture ??= () => undefined;
+  Element.prototype.releasePointerCapture ??= () => undefined;
+}
+
 // JSDOM doesn't implement HTMLDialogElement; the shared Modal uses
 // dialog.showModal() / dialog.close() so add minimal polyfills that
 // flip the `open` attribute the way the spec does.

@@ -1,6 +1,7 @@
 /** Admin: users API. */
 
 import { request } from "./client";
+import type { PersonReadManagement } from "../manage/types";
 
 export type UserAdminRead = {
   id: string;
@@ -23,6 +24,21 @@ export type UserAdminCreatePayload = {
   role: string;
   initial_password: string;
   must_change_password?: boolean;
+  /** Link this existing account-less Person instead of creating a fresh one. */
+  person_id?: string;
+  /** Deliberately create a new profile even if a name-matching Person exists. */
+  create_new_person?: boolean;
+};
+
+export type UserDeleteOptions = {
+  person_action: "keep" | "delete";
+  note?: string;
+  force_unlink_topics?: boolean;
+};
+
+export type UserLinkedPerson = {
+  person: PersonReadManagement | null;
+  topic_link_count: number;
 };
 
 export type UserAdminUpdatePayload = {
@@ -80,11 +96,36 @@ export async function resetUserPassword(
   });
 }
 
-/** Permanently delete a user. The backend cleans up dependent rows first. */
-export async function deleteUser(userId: string): Promise<UserAdminRead> {
+/** Permanently delete a user. `options` controls how the linked Person is handled. */
+export async function deleteUser(
+  userId: string,
+  options?: UserDeleteOptions,
+): Promise<UserAdminRead> {
   return request<UserAdminRead>(`/admin/users/${userId}`, {
     method: "DELETE",
+    ...(options ? { body: JSON.stringify(options) } : {}),
   });
+}
+
+/** The user's linked Person plus its topic-link count, for the delete dialog. */
+export async function getUserLinkedPerson(
+  userId: string,
+): Promise<UserLinkedPerson> {
+  return request<UserLinkedPerson>(`/admin/users/${userId}/person`);
+}
+
+/** Account-less People matching a name — drives the create-time link prompt. */
+export async function getPersonCandidates(
+  firstName: string,
+  lastName: string,
+): Promise<PersonReadManagement[]> {
+  const qs = new URLSearchParams({
+    first_name: firstName,
+    last_name: lastName,
+  });
+  return request<PersonReadManagement[]>(
+    `/admin/users/person-candidates?${qs.toString()}`,
+  );
 }
 
 /** Admin: the Entra integration's enabled state and group→role mapping. */

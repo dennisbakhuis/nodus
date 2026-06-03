@@ -63,11 +63,15 @@ export type {
   UserAdminCreatePayload,
   UserAdminRead,
   UserAdminUpdatePayload,
+  UserDeleteOptions,
+  UserLinkedPerson,
 } from "../api/users";
 export {
   createUser,
   deleteUser,
   getEntraConfig,
+  getPersonCandidates,
+  getUserLinkedPerson,
   listUsers,
   resetUserPassword,
   updateUser,

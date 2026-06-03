@@ -10,6 +10,7 @@ from app.db import SessionDep
 from app.models.person import Person
 from app.models.topic import Topic
 from app.models.topic_person_link import TopicPersonLink
+from app.models.user import User
 from app.schemas.person import (
     PersonCreate,
     PersonReadManagement,
@@ -150,6 +151,25 @@ def update_person_endpoint(
     person = session.get(Person, person_id)
     if person is None:
         raise HTTPException(status_code=404, detail="Person not found")
+
+    link_kwargs: dict[str, object] = {}
+    if "user_id" in payload.model_fields_set:
+        if payload.user_id is not None:
+            target = session.get(User, payload.user_id)
+            if target is None:
+                raise HTTPException(status_code=404, detail="User to link not found")
+            clash = session.exec(
+                select(Person)
+                .where(Person.user_id == payload.user_id)
+                .where(Person.id != person_id)
+            ).first()
+            if clash is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="That user is already linked to another person",
+                )
+        link_kwargs["user_id"] = payload.user_id
+
     updated = update_person(
         session=session,
         person_id=person_id,
@@ -159,6 +179,7 @@ def update_person_endpoint(
         department=payload.department,
         role=payload.role,
         notes=payload.notes,
+        **link_kwargs,
     )
     return PersonReadManagement.model_validate(updated)
 

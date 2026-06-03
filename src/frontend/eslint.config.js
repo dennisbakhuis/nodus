@@ -48,8 +48,12 @@ export default [
     },
   },
   {
-    files: ["src/shared/tokenStore.ts", "src/manage/ManageSidebar.tsx"],
-    // ManageSidebar uses localStorage for the sidebar width — not auth.
+    files: [
+      "src/shared/tokenStore.ts",
+      "src/shared/useResizableWidth.tsx",
+      "src/radar/RadarPage.tsx",
+    ],
+    // These use localStorage for sidebar width / collapsed state — not auth.
     // tokenStore IS the wrapper.
     rules: { "no-restricted-syntax": "off" },
   },

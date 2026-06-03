@@ -4,7 +4,7 @@ from datetime import UTC
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
-from sqlmodel import select
+from sqlmodel import Session, select
 
 from app import config
 from app.auth import (
@@ -34,10 +34,24 @@ from app.schemas.auth import (
     MfaLoginRequest,
     MfaSetupResponse,
 )
-from app.schemas.user import UserMe
+from app.schemas.person import PersonReadManagement
+from app.schemas.user import SelfProfileUpdate, UserMe
+from app.services.persons import (
+    ensure_person_for_user,
+    update_person,
+    user_profile_incomplete,
+)
 from app.time_utils import now_utc
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _user_me(session: Session, user: User) -> UserMe:
+    """Build a UserMe, flagging an incomplete linked profile (skipped when auth is off)."""
+    me = UserMe.model_validate(user)
+    if not auth_disabled():
+        me.profile_incomplete = user_profile_incomplete(session, user.id)
+    return me
 
 
 @router.get("/config")
@@ -119,7 +133,7 @@ def login(payload: LoginRequest, session: SessionDep) -> LoginResponse:
 
     if not user.mfa_enabled:
         token = _issue_session(session, user)
-        return LoginResponse(token=token, user=UserMe.model_validate(user))
+        return LoginResponse(token=token, user=_user_me(session, user))
 
     challenge_token = generate_token()
     session.add(
@@ -181,7 +195,7 @@ def login_mfa(payload: MfaLoginRequest, session: SessionDep) -> LoginResponse:
 
     session.delete(challenge)
     token = _issue_session(session, user)
-    return LoginResponse(token=token, user=UserMe.model_validate(user))
+    return LoginResponse(token=token, user=_user_me(session, user))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -204,11 +218,51 @@ def logout(
 
 
 @router.get("/me", response_model=UserMe)
-def me(user: OptionalUserDep) -> UserMe:
+def me(user: OptionalUserDep, session: SessionDep) -> UserMe:
     """Return the authenticated user's profile, or 401 if anonymous."""
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    return UserMe.model_validate(user)
+    return _user_me(session, user)
+
+
+@router.get("/me/profile", response_model=PersonReadManagement)
+def get_my_profile(user: OptionalUserDep, session: SessionDep) -> PersonReadManagement:
+    """Return the caller's own People profile, creating a linked one if missing."""
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    if auth_disabled():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No profile when authentication is disabled",
+        )
+    person = ensure_person_for_user(session, user)
+    return PersonReadManagement.model_validate(person)
+
+
+@router.patch("/me/profile", response_model=UserMe)
+def update_my_profile(
+    payload: SelfProfileUpdate, user: OptionalUserDep, session: SessionDep
+) -> UserMe:
+    """Update the caller's own People profile (used by the first-login completion popup)."""
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    if auth_disabled():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No profile when authentication is disabled",
+        )
+    person = ensure_person_for_user(session, user)
+    update_person(
+        session=session,
+        person_id=person.id,
+        full_name=payload.full_name,
+        company=payload.company,
+        email=payload.email,
+        department=payload.department,
+        role=payload.role,
+    )
+    session.refresh(user)
+    return _user_me(session, user)
 
 
 @router.post("/mfa/setup", response_model=MfaSetupResponse)
@@ -264,7 +318,7 @@ def mfa_enable(payload: MfaCodeRequest, user: OptionalUserDep, session: SessionD
     session.add(user)
     session.commit()
     session.refresh(user)
-    return UserMe.model_validate(user)
+    return _user_me(session, user)
 
 
 @router.post("/change-password", response_model=UserMe)
@@ -289,7 +343,7 @@ def change_password(
     session.add(user)
     session.commit()
     session.refresh(user)
-    return UserMe.model_validate(user)
+    return _user_me(session, user)
 
 
 @router.post("/mfa/disable", response_model=UserMe)
@@ -306,4 +360,4 @@ def mfa_disable(payload: MfaDisableRequest, user: OptionalUserDep, session: Sess
     session.add(user)
     session.commit()
     session.refresh(user)
-    return UserMe.model_validate(user)
+    return _user_me(session, user)

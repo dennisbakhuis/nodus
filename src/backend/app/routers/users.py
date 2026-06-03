@@ -12,12 +12,22 @@ from app.models.auth_session import AuthSession
 from app.models.media_asset import MediaAsset
 from app.models.mfa_challenge import MfaChallenge
 from app.models.person import Person
+from app.models.topic_person_link import TopicPersonLink
 from app.models.user import User, UserRole
+from app.schemas.person import PersonReadManagement
 from app.schemas.user import (
     UserAdminCreate,
     UserAdminRead,
     UserAdminUpdate,
+    UserDeleteOptions,
+    UserLinkedPersonRead,
     UserPasswordReset,
+)
+from app.services.persons import (
+    count_topic_links_for_person,
+    ensure_person_for_user,
+    find_unlinked_person_candidates,
+    get_person_for_user,
 )
 from app.time_utils import now_utc
 
@@ -61,7 +71,13 @@ def list_users(session: SessionDep, _admin: AdminDep) -> list[UserAdminRead]:
 
 @router.post("", response_model=UserAdminRead, status_code=201)
 def create_user(payload: UserAdminCreate, session: SessionDep, _admin: AdminDep) -> UserAdminRead:
-    """Create a new user. Username must be unique. Initial password is bcrypt-hashed."""
+    """Create a new user, attaching a linked People profile.
+
+    Username must be unique; the initial password is bcrypt-hashed. The account
+    gets a linked Person: an explicitly chosen ``person_id`` is linked, otherwise
+    a fresh profile is created — unless an account-less Person with the same name
+    already exists and the caller hasn't resolved it (409 with candidates).
+    """
     _validate_role(payload.role)
     if not payload.username.strip():
         raise HTTPException(status_code=400, detail="Username cannot be empty")
@@ -73,6 +89,31 @@ def create_user(payload: UserAdminCreate, session: SessionDep, _admin: AdminDep)
     clash = session.exec(select(User).where(User.username == payload.username)).first()
     if clash is not None:
         raise HTTPException(status_code=409, detail="Username already taken")
+
+    full_name = f"{payload.first_name} {payload.last_name}".strip()
+    link_person_id: uuid.UUID | None = None
+    if payload.person_id is not None:
+        person = session.get(Person, payload.person_id)
+        if person is None:
+            raise HTTPException(status_code=404, detail="Person to link not found")
+        if person.user_id is not None:
+            raise HTTPException(
+                status_code=409, detail="That person is already linked to an account"
+            )
+        link_person_id = payload.person_id
+    elif not payload.create_new_person:
+        candidates = find_unlinked_person_candidates(session, full_name)
+        if candidates:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "person_match",
+                    "candidates": [
+                        PersonReadManagement.model_validate(p).model_dump(mode="json")
+                        for p in candidates
+                    ],
+                },
+            )
 
     user = User(
         id=uuid.uuid4(),
@@ -88,7 +129,44 @@ def create_user(payload: UserAdminCreate, session: SessionDep, _admin: AdminDep)
     session.add(user)
     session.commit()
     session.refresh(user)
+
+    if link_person_id is not None:
+        person = session.get(Person, link_person_id)
+        if person is not None:
+            person.user_id = user.id
+            session.add(person)
+            session.commit()
+    else:
+        ensure_person_for_user(session, user)
+
     return UserAdminRead.model_validate(user)
+
+
+@router.get("/person-candidates", response_model=list[PersonReadManagement])
+def person_candidates(
+    first_name: str, last_name: str, session: SessionDep, _admin: AdminDep
+) -> list[PersonReadManagement]:
+    """Account-less People matching a name — drives the create-time link prompt."""
+    full_name = f"{first_name} {last_name}".strip()
+    return [
+        PersonReadManagement.model_validate(p)
+        for p in find_unlinked_person_candidates(session, full_name)
+    ]
+
+
+@router.get("/{user_id}/person", response_model=UserLinkedPersonRead)
+def user_linked_person(
+    user_id: uuid.UUID, session: SessionDep, _admin: AdminDep
+) -> UserLinkedPersonRead:
+    """The user's linked Person plus its topic-link count, for the delete dialog."""
+    user = session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    person = get_person_for_user(session, user_id)
+    return UserLinkedPersonRead(
+        person=PersonReadManagement.model_validate(person) if person is not None else None,
+        topic_link_count=count_topic_links_for_person(session, person.id) if person else 0,
+    )
 
 
 @router.patch("/{user_id}", response_model=UserAdminRead)
@@ -192,16 +270,24 @@ def reset_password(
 
 
 @router.delete("/{user_id}", response_model=UserAdminRead)
-def delete_user(user_id: uuid.UUID, session: SessionDep, admin: AdminDep) -> UserAdminRead:
+def delete_user(
+    user_id: uuid.UUID,
+    session: SessionDep,
+    admin: AdminDep,
+    payload: UserDeleteOptions | None = None,
+) -> UserAdminRead:
     """Permanently delete a user, cleaning up dependent rows first.
 
     Deactivation (soft state) is handled via PATCH ``is_active=False``. This
     endpoint removes the account entirely: it deletes the user's auth sessions,
     in-flight MFA challenges, and API keys (those the user owns and those they
-    created), and nulls the optional back-pointers on Person and MediaAsset so
-    those records survive without the now-deleted user. Refuses to delete the
-    last active admin or the calling admin's own account.
+    created). The linked People record is handled per ``payload.person_action``:
+    ``keep`` (default) unlinks it and appends an optional ``note``; ``delete``
+    removes it too (rejected with the topic-link count unless
+    ``force_unlink_topics`` is set). MediaAsset back-pointers are always nulled.
+    Refuses to delete the last active admin or the calling admin's own account.
     """
+    opts = payload or UserDeleteOptions()
     user = session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -218,6 +304,15 @@ def delete_user(user_id: uuid.UUID, session: SessionDep, admin: AdminDep) -> Use
             raise HTTPException(status_code=409, detail="Cannot delete the last active admin")
 
     snapshot = UserAdminRead.model_validate(user)
+    linked_persons = list(session.exec(select(Person).where(Person.user_id == user_id)).all())
+
+    if opts.person_action == "delete":
+        total_links = sum(count_topic_links_for_person(session, p.id) for p in linked_persons)
+        if total_links > 0 and not opts.force_unlink_topics:
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "person_in_use", "topic_link_count": total_links},
+            )
 
     for auth_session in session.exec(
         select(AuthSession).where(AuthSession.user_id == user_id)
@@ -231,9 +326,26 @@ def delete_user(user_id: uuid.UUID, session: SessionDep, admin: AdminDep) -> Use
         select(ApiKey).where((ApiKey.user_id == user_id) | (ApiKey.created_by_user_id == user_id))
     ).all():
         session.delete(api_key)
-    for person in session.exec(select(Person).where(Person.user_id == user_id)).all():
-        person.user_id = None
-        session.add(person)
+
+    note = (opts.note or "").strip()
+    if opts.person_action == "delete":
+        # Drop topic links first and flush, so the person row's FK dependents are
+        # gone before the person DELETE is emitted.
+        for person in linked_persons:
+            for link in session.exec(
+                select(TopicPersonLink).where(TopicPersonLink.person_id == person.id)
+            ).all():
+                session.delete(link)
+        session.flush()
+        for person in linked_persons:
+            session.delete(person)
+    else:
+        for person in linked_persons:
+            person.user_id = None
+            if note:
+                person.notes = f"{person.notes}\n{note}" if person.notes else note
+            session.add(person)
+
     for asset in session.exec(
         select(MediaAsset).where(MediaAsset.uploaded_by_user_id == user_id)
     ).all():
