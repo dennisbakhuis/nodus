@@ -49,6 +49,17 @@ export async function deletePerson(personId: string): Promise<void> {
   return request<void>(`/manage/persons/${personId}`, { method: "DELETE" });
 }
 
+/** Merge `sourceId` into `targetId`; the source is deleted and target returned. */
+export async function mergePerson(
+  sourceId: string,
+  targetId: string,
+): Promise<PersonReadManagement> {
+  return request<PersonReadManagement>(`/manage/persons/${sourceId}/merge`, {
+    method: "POST",
+    body: JSON.stringify({ target_id: targetId }),
+  });
+}
+
 export async function listTopicPersons(
   topicId: string,
 ): Promise<TopicPersonLinkManagementRead[]> {

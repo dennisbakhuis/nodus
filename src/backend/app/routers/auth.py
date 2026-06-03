@@ -24,6 +24,7 @@ from app.auth import (
 from app.db import SessionDep
 from app.models.auth_session import AuthSession
 from app.models.mfa_challenge import MfaChallenge
+from app.models.person import Person
 from app.models.user import User, UserRole
 from app.schemas.auth import (
     ChangePasswordRequest,
@@ -35,9 +36,12 @@ from app.schemas.auth import (
     MfaSetupResponse,
 )
 from app.schemas.person import PersonReadManagement
-from app.schemas.user import SelfProfileUpdate, UserMe
+from app.schemas.user import SelfProfileLink, SelfProfileUpdate, UserMe
 from app.services.persons import (
+    count_topic_links_for_person,
     ensure_person_for_user,
+    find_unlinked_person_candidates,
+    get_person_for_user,
     update_person,
     user_profile_incomplete,
 )
@@ -227,7 +231,7 @@ def me(user: OptionalUserDep, session: SessionDep) -> UserMe:
 
 @router.get("/me/profile", response_model=PersonReadManagement)
 def get_my_profile(user: OptionalUserDep, session: SessionDep) -> PersonReadManagement:
-    """Return the caller's own People profile, creating a linked one if missing."""
+    """Return the caller's own People profile, adopting/creating a linked one if missing."""
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     if auth_disabled():
@@ -235,8 +239,69 @@ def get_my_profile(user: OptionalUserDep, session: SessionDep) -> PersonReadMana
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No profile when authentication is disabled",
         )
-    person = ensure_person_for_user(session, user)
+    person = ensure_person_for_user(session, user, adopt_match=True)
     return PersonReadManagement.model_validate(person)
+
+
+@router.get("/me/profile/candidates", response_model=list[PersonReadManagement])
+def get_my_profile_candidates(
+    user: OptionalUserDep, session: SessionDep
+) -> list[PersonReadManagement]:
+    """Account-less People matching the caller's name, so they can claim the right one."""
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    if auth_disabled():
+        return []
+    full_name = f"{user.first_name} {user.last_name}".strip()
+    return [
+        PersonReadManagement.model_validate(p)
+        for p in find_unlinked_person_candidates(session, full_name)
+    ]
+
+
+@router.post("/me/profile/link", response_model=UserMe)
+def link_my_profile(
+    payload: SelfProfileLink, user: OptionalUserDep, session: SessionDep
+) -> UserMe:
+    """Link the caller's account to an existing account-less People record.
+
+    Discards the caller's current linked Person when it's an empty auto-created stub
+    (blank company, no topic links); otherwise just unlinks it to avoid data loss.
+    """
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    if auth_disabled():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No profile when authentication is disabled",
+        )
+    chosen = session.get(Person, payload.person_id)
+    if chosen is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+    if chosen.user_id is not None and chosen.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That person is already linked to another account",
+        )
+
+    current = get_person_for_user(session, user.id)
+    if current is not None and current.id != chosen.id:
+        is_stub = (
+            not (current.company or "").strip()
+            and count_topic_links_for_person(session, current.id) == 0
+        )
+        if is_stub:
+            session.delete(current)
+        else:
+            current.user_id = None
+            session.add(current)
+        session.flush()
+
+    chosen.user_id = user.id
+    session.add(chosen)
+    session.commit()
+    session.refresh(user)
+    return _user_me(session, user)
 
 
 @router.patch("/me/profile", response_model=UserMe)
@@ -251,7 +316,7 @@ def update_my_profile(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No profile when authentication is disabled",
         )
-    person = ensure_person_for_user(session, user)
+    person = ensure_person_for_user(session, user, adopt_match=True)
     update_person(
         session=session,
         person_id=person.id,

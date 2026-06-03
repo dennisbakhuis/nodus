@@ -7,11 +7,13 @@ import { ConfirmProvider } from "../../src/shared/ConfirmDialog";
 const listPersons = vi.fn();
 const listUsers = vi.fn();
 const updatePerson = vi.fn();
+const mergePerson = vi.fn();
 
 vi.mock("../../src/manage/api", () => ({
   listPersons: (...a: unknown[]) => listPersons(...a),
   listUsers: (...a: unknown[]) => listUsers(...a),
   updatePerson: (...a: unknown[]) => updatePerson(...a),
+  mergePerson: (...a: unknown[]) => mergePerson(...a),
   createPerson: vi.fn(),
   deletePerson: vi.fn(),
 }));
@@ -50,6 +52,7 @@ describe("PersonsPage linked account", () => {
       { id: "u1", username: "jdoe", first_name: "Jane", last_name: "Doe" },
     ]);
     updatePerson.mockResolvedValue(person({ user_id: "u1" }));
+    mergePerson.mockResolvedValue(person());
   });
 
   it("links a person to a user via the picker", async () => {
@@ -63,6 +66,27 @@ describe("PersonsPage linked account", () => {
 
     await waitFor(() => {
       expect(updatePerson).toHaveBeenCalledWith("p1", { user_id: "u1" });
+    });
+  });
+
+  it("merges a person into another via the merge dialog", async () => {
+    listPersons.mockResolvedValue([
+      person(),
+      person({ id: "p2", full_name: "Jane Dupe" }),
+    ]);
+    renderPage();
+    const cell = await screen.findByText("Jane Doe");
+    const row = cell.closest("tr") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Merge" }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Merge target"), {
+      target: { value: "p2" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Merge" }));
+
+    await waitFor(() => {
+      expect(mergePerson).toHaveBeenCalledWith("p1", "p2");
     });
   });
 });

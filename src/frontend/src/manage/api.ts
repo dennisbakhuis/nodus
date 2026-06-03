@@ -32,6 +32,7 @@ export {
   deletePerson,
   listPersons,
   listTopicPersons,
+  mergePerson,
   removePersonFromTopic,
   updatePerson,
   upsertPersonOnTopic,

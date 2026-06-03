@@ -23,19 +23,33 @@ def ensure_person_for_user(
     company: str | None = None,
     department: str | None = None,
     role: str | None = None,
+    adopt_match: bool = False,
     commit: bool = True,
 ) -> Person:
-    """Return the Person linked to `user`, creating one if none exists.
+    """Return the Person linked to `user`, adopting or creating one if none exists.
 
-    The auto-created profile seeds `full_name` from the user's names and leaves
-    `company` blank (an empty string satisfies the NOT NULL column); the gaps are
-    completed by the user at first login. Idempotent: a second call returns the
-    existing linked Person untouched.
+    When `adopt_match` is set and the user has no linked Person, an existing
+    *account-less* Person whose full name matches exactly (and uniquely) is linked
+    instead of creating a duplicate — this is what prevents the backfill / first-login
+    flow from stamping out a second copy of someone already in the People registry.
+    With 0 or >1 matches (or `adopt_match` off) a fresh stub is created: `full_name`
+    from the user's names, blank `company` (satisfies NOT NULL), completed at first
+    login. Idempotent: a second call returns the existing linked Person untouched.
     """
     existing = session.exec(select(Person).where(Person.user_id == user.id)).first()
     if existing is not None:
         return existing
     full_name = f"{user.first_name} {user.last_name}".strip() or user.username
+    if adopt_match:
+        candidates = find_unlinked_person_candidates(session, full_name)
+        if len(candidates) == 1:
+            match = candidates[0]
+            match.user_id = user.id
+            session.add(match)
+            if commit:
+                session.commit()
+                session.refresh(match)
+            return match
     person = Person(
         full_name=full_name,
         company=company or "",
@@ -86,15 +100,117 @@ def count_topic_links_for_person(session: Session, person_id: uuid.UUID) -> int:
 
 
 def backfill_person_profiles(session: Session) -> int:
-    """Create a linked Person for every user that lacks one. Returns the count created."""
-    created = 0
+    """Ensure every user has a linked Person. Returns the count created or adopted.
+
+    Adopts a unique account-less same-name match where one exists (so a restored
+    record isn't duplicated) and otherwise creates a stub.
+    """
+    touched = 0
     for user in session.exec(select(User)).all():
         if get_person_for_user(session, user.id) is None:
-            ensure_person_for_user(session, user, commit=False)
-            created += 1
-    if created:
+            ensure_person_for_user(session, user, adopt_match=True, commit=False)
+            touched += 1
+    if touched:
         session.commit()
-    return created
+    return touched
+
+
+def merge_persons(session: Session, source_id: uuid.UUID, target_id: uuid.UUID) -> Person:
+    """Merge `source` into `target`: move its topic links + account, then delete it.
+
+    Topic links move to target, dropping any that would collide with an existing
+    `(topic_id, person_id, link_role)` on target. The account link moves only when
+    target has none; merging two Persons that are linked to *different* accounts
+    raises ValueError. Target's empty profile fields are filled from source.
+    Returns the surviving target Person.
+    """
+    if source_id == target_id:
+        raise ValueError("Cannot merge a person into itself")
+    source = session.get(Person, source_id)
+    target = session.get(Person, target_id)
+    if source is None or target is None:
+        raise ValueError("Both source and target persons must exist")
+
+    both_linked = source.user_id is not None and target.user_id is not None
+    if both_linked and source.user_id != target.user_id:
+        raise ValueError("Both people are linked to different accounts; unlink one first")
+
+    for link in session.exec(
+        select(TopicPersonLink).where(TopicPersonLink.person_id == source_id)
+    ).all():
+        clash = session.exec(
+            select(TopicPersonLink)
+            .where(TopicPersonLink.topic_id == link.topic_id)
+            .where(TopicPersonLink.person_id == target_id)
+            .where(TopicPersonLink.link_role == link.link_role)
+        ).first()
+        if clash is not None:
+            session.delete(link)
+        else:
+            link.person_id = target_id
+            session.add(link)
+    session.flush()
+
+    if source.user_id is not None and target.user_id is None:
+        moved = source.user_id
+        source.user_id = None
+        session.add(source)
+        session.flush()
+        target.user_id = moved
+
+    if not (target.company or "").strip() and (source.company or "").strip():
+        target.company = source.company
+    for field in ("email", "department", "role", "notes"):
+        if not getattr(target, field) and getattr(source, field):
+            setattr(target, field, getattr(source, field))
+
+    target.updated_at = datetime.now(UTC)
+    session.add(target)
+    session.delete(source)
+    session.commit()
+    session.refresh(target)
+    return target
+
+
+def dedup_person_profiles(session: Session, *, apply: bool) -> list[dict[str, str]]:
+    """Find (and optionally merge) accounts whose linked Person duplicates a twin.
+
+    For each user whose linked Person has exactly one account-less same-name twin,
+    plan a merge into whichever side carries topic links (else the linked one). With
+    `apply` false this only reports the planned merges; with `apply` true it performs
+    them. Returns one entry per planned/performed merge.
+    """
+    planned: list[dict[str, str]] = []
+    for user in session.exec(select(User)).all():
+        linked = get_person_for_user(session, user.id)
+        if linked is None:
+            continue
+        twins = [
+            p
+            for p in find_unlinked_person_candidates(session, linked.full_name)
+            if p.id != linked.id
+        ]
+        if len(twins) != 1:
+            continue
+        twin = twins[0]
+        # Survivor keeps topic links; the linked stub is usually the empty one.
+        if count_topic_links_for_person(session, twin.id) > count_topic_links_for_person(
+            session, linked.id
+        ):
+            target, source = twin, linked
+        else:
+            target, source = linked, twin
+        planned.append(
+            {
+                "username": user.username,
+                "target": str(target.id),
+                "source": str(source.id),
+                "full_name": linked.full_name,
+            }
+        )
+        if apply:
+            merge_persons(session, source.id, target.id)
+    return planned
 
 
 def create_person(

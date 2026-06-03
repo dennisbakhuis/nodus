@@ -4,6 +4,7 @@ import {
   deletePerson,
   listPersons,
   listUsers,
+  mergePerson,
   updatePerson,
 } from "./api";
 import type { UserAdminRead } from "./api";
@@ -11,6 +12,7 @@ import type { PersonReadManagement } from "./types";
 import styles from "./ManagePage.module.css";
 import { useConfirm } from "../shared/ConfirmDialog";
 import { LoadingState } from "../shared/LoadingState";
+import { Modal } from "../shared/Modal";
 
 type FormState = {
   full_name: string;
@@ -54,6 +56,11 @@ export function PersonsPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<UserAdminRead[]>([]);
+  const [mergeSource, setMergeSource] = useState<PersonReadManagement | null>(
+    null,
+  );
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [merging, setMerging] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,6 +176,22 @@ export function PersonsPage() {
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to link account");
+    }
+  }
+
+  async function handleMerge() {
+    if (!mergeSource || !mergeTargetId) return;
+    setMerging(true);
+    setError(null);
+    try {
+      await mergePerson(mergeSource.id, mergeTargetId);
+      setMergeSource(null);
+      setMergeTargetId("");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Merge failed");
+    } finally {
+      setMerging(false);
     }
   }
 
@@ -436,6 +459,16 @@ export function PersonsPage() {
                     <button
                       type="button"
                       className={styles.btnSecondary}
+                      onClick={() => {
+                        setMergeSource(p);
+                        setMergeTargetId("");
+                      }}
+                    >
+                      Merge
+                    </button>{" "}
+                    <button
+                      type="button"
+                      className={styles.btnSecondary}
                       onClick={() => void handleDelete(p)}
                     >
                       Delete
@@ -447,6 +480,65 @@ export function PersonsPage() {
           </tbody>
         </table>
       </section>
+
+      <Modal
+        open={mergeSource !== null}
+        onClose={() => setMergeSource(null)}
+        title={mergeSource ? `Merge ${mergeSource.full_name}` : "Merge person"}
+      >
+        {mergeSource && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--space-3)",
+            }}
+          >
+            <p className={styles.sectionDesc} style={{ margin: 0 }}>
+              Move <strong>{mergeSource.full_name}</strong>'s topic links and
+              account onto another record, then delete this one. This cannot be
+              undone.
+            </p>
+            <label>
+              Merge into
+              <select
+                className={styles.input}
+                aria-label="Merge target"
+                value={mergeTargetId}
+                onChange={(e) => setMergeTargetId(e.target.value)}
+                style={{ width: "100%", marginTop: 4 }}
+              >
+                <option value="">— select a person —</option>
+                {persons
+                  .filter((p) => p.id !== mergeSource.id)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.full_name}
+                      {p.company ? ` — ${p.company}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <div className={styles.actionsRow}>
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                disabled={merging || !mergeTargetId}
+                onClick={() => void handleMerge()}
+              >
+                {merging ? "Merging…" : "Merge"}
+              </button>
+              <button
+                type="button"
+                className={styles.btnSecondary}
+                onClick={() => setMergeSource(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

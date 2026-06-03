@@ -104,3 +104,9 @@ class SelfProfileUpdate(BaseModel):
     email: str | None = None
     department: str | None = None
     role: str | None = None
+
+
+class SelfProfileLink(BaseModel):
+    """Body for linking the caller's account to an existing People record."""
+
+    person_id: uuid.UUID

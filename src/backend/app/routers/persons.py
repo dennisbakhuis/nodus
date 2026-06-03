@@ -13,6 +13,7 @@ from app.models.topic_person_link import TopicPersonLink
 from app.models.user import User
 from app.schemas.person import (
     PersonCreate,
+    PersonMerge,
     PersonReadManagement,
     PersonUpdate,
     TopicPersonLinkCreate,
@@ -23,6 +24,7 @@ from app.services.persons import (
     create_person,
     get_persons_for_topic,
     link_person_to_topic,
+    merge_persons,
     update_person,
 )
 
@@ -223,6 +225,31 @@ def delete_person_endpoint(
         )
     session.delete(person)
     session.commit()
+
+
+@persons_router.post("/{source_id}/merge", response_model=PersonReadManagement)
+def merge_person_endpoint(
+    source_id: uuid.UUID,
+    payload: PersonMerge,
+    session: SessionDep,
+    _user: WriterDep,
+) -> PersonReadManagement:
+    """Merge `source_id` into `payload.target_id`, returning the surviving Person.
+
+    Moves the source's topic links and account onto the target, then deletes the
+    source. Refuses (409) when the two are linked to different accounts.
+    """
+    if source_id == payload.target_id:
+        raise HTTPException(status_code=400, detail="Cannot merge a person into itself")
+    if session.get(Person, source_id) is None:
+        raise HTTPException(status_code=404, detail="Source person not found")
+    if session.get(Person, payload.target_id) is None:
+        raise HTTPException(status_code=404, detail="Target person not found")
+    try:
+        merged = merge_persons(session, source_id, payload.target_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return PersonReadManagement.model_validate(merged)
 
 
 @topic_persons_router.get(

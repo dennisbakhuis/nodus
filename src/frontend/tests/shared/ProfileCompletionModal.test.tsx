@@ -5,10 +5,14 @@ import { ProfileCompletionModal } from "../../src/shared/ProfileCompletionModal"
 
 const getMyProfile = vi.fn();
 const updateMyProfile = vi.fn();
+const getProfileCandidates = vi.fn();
+const linkMyProfile = vi.fn();
 
 vi.mock("../../src/api/profile", () => ({
   getMyProfile: (...a: unknown[]) => getMyProfile(...a),
   updateMyProfile: (...a: unknown[]) => updateMyProfile(...a),
+  getProfileCandidates: (...a: unknown[]) => getProfileCandidates(...a),
+  linkMyProfile: (...a: unknown[]) => linkMyProfile(...a),
 }));
 
 const refreshUser = vi.fn();
@@ -42,6 +46,8 @@ describe("ProfileCompletionModal", () => {
       role: "",
     });
     updateMyProfile.mockResolvedValue(undefined);
+    getProfileCandidates.mockResolvedValue([]);
+    linkMyProfile.mockResolvedValue(undefined);
     mockAuth = {
       isAuthenticated: true,
       user: { profile_incomplete: true },
@@ -86,5 +92,33 @@ describe("ProfileCompletionModal", () => {
       );
     });
     expect(refreshUser).toHaveBeenCalled();
+  });
+
+  it("offers matching records and links the chosen one", async () => {
+    getProfileCandidates.mockResolvedValue([
+      { id: "p-match", full_name: "Jane Doe", company: "Acme", email: "j@a.co" },
+    ]);
+    renderModal();
+
+    expect(await screen.findByText("Is one of these you?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "This is me" }));
+
+    await waitFor(() => {
+      expect(linkMyProfile).toHaveBeenCalledWith("p-match");
+    });
+    expect(refreshUser).toHaveBeenCalled();
+  });
+
+  it("falls back to the fill form via 'create a new profile'", async () => {
+    getProfileCandidates.mockResolvedValue([
+      { id: "p-match", full_name: "Jane Doe", company: "Acme", email: null },
+    ]);
+    renderModal();
+    await screen.findByText("Is one of these you?");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /create a new profile/i }),
+    );
+    expect(screen.getByLabelText(/Company/i)).toBeInTheDocument();
   });
 });
