@@ -11,6 +11,7 @@ export type UserAdminRead = {
   is_active: boolean;
   mfa_enabled: boolean;
   must_change_password: boolean;
+  entra_oid: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -25,10 +26,21 @@ export type UserAdminCreatePayload = {
 };
 
 export type UserAdminUpdatePayload = {
+  username?: string;
   first_name?: string;
   last_name?: string;
   role?: string;
   is_active?: boolean;
+};
+
+export type EntraGroupMapping = {
+  role: string;
+  group_id: string;
+};
+
+export type EntraAdminConfig = {
+  enabled: boolean;
+  groups: EntraGroupMapping[];
 };
 
 export async function listUsers(): Promise<UserAdminRead[]> {
@@ -68,8 +80,14 @@ export async function resetUserPassword(
   });
 }
 
-export async function deactivateUser(userId: string): Promise<UserAdminRead> {
+/** Permanently delete a user. The backend cleans up dependent rows first. */
+export async function deleteUser(userId: string): Promise<UserAdminRead> {
   return request<UserAdminRead>(`/admin/users/${userId}`, {
     method: "DELETE",
   });
+}
+
+/** Admin: the Entra integration's enabled state and group→role mapping. */
+export async function getEntraConfig(): Promise<EntraAdminConfig> {
+  return request<EntraAdminConfig>("/auth/entra/admin/config");
 }

@@ -1,4 +1,4 @@
-"""Admin user management — list, create, update role/active, reset password, deactivate."""
+"""Admin user management — list, create, update profile/role/active, reset password, delete."""
 
 import uuid
 
@@ -7,6 +7,11 @@ from sqlmodel import select
 
 from app.auth import AdminDep, hash_password
 from app.db import SessionDep
+from app.models.api_key import ApiKey
+from app.models.auth_session import AuthSession
+from app.models.media_asset import MediaAsset
+from app.models.mfa_challenge import MfaChallenge
+from app.models.person import Person
 from app.models.user import User, UserRole
 from app.schemas.user import (
     UserAdminCreate,
@@ -81,6 +86,27 @@ def update_user(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    edits_profile = (
+        payload.username is not None
+        or payload.first_name is not None
+        or payload.last_name is not None
+    )
+    if edits_profile and user.entra_oid is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Profile of Entra-managed users is synced from Entra and cannot be edited here",
+        )
+
+    if payload.username is not None:
+        new_username = payload.username.strip()
+        if not new_username:
+            raise HTTPException(status_code=400, detail="Username cannot be empty")
+        if new_username != user.username:
+            clash = session.exec(select(User).where(User.username == new_username)).first()
+            if clash is not None:
+                raise HTTPException(status_code=409, detail="Username already taken")
+            user.username = new_username
+
     if payload.role is not None:
         _validate_role(payload.role)
         if user.role == UserRole.Admin.value and payload.role != UserRole.Admin.value:
@@ -149,13 +175,21 @@ def reset_password(
 
 
 @router.delete("/{user_id}", response_model=UserAdminRead)
-def deactivate_user(user_id: uuid.UUID, session: SessionDep, admin: AdminDep) -> UserAdminRead:
-    """Soft-delete (deactivate). Hard delete is intentionally CLI-only to preserve audit trails."""
+def delete_user(user_id: uuid.UUID, session: SessionDep, admin: AdminDep) -> UserAdminRead:
+    """Permanently delete a user, cleaning up dependent rows first.
+
+    Deactivation (soft state) is handled via PATCH ``is_active=False``. This
+    endpoint removes the account entirely: it deletes the user's auth sessions,
+    in-flight MFA challenges, and API keys (those the user owns and those they
+    created), and nulls the optional back-pointers on Person and MediaAsset so
+    those records survive without the now-deleted user. Refuses to delete the
+    last active admin or the calling admin's own account.
+    """
     user = session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     if user.id == admin.id:
-        raise HTTPException(status_code=409, detail="Admins cannot deactivate themselves")
+        raise HTTPException(status_code=409, detail="Admins cannot delete themselves")
     if user.role == UserRole.Admin.value and user.is_active:
         other_admins = session.exec(
             select(User)
@@ -164,13 +198,34 @@ def deactivate_user(user_id: uuid.UUID, session: SessionDep, admin: AdminDep) ->
             .where(User.id != user_id)
         ).all()
         if not other_admins:
-            raise HTTPException(status_code=409, detail="Cannot deactivate the last active admin")
-    user.is_active = False
-    user.updated_at = now_utc()
-    session.add(user)
+            raise HTTPException(status_code=409, detail="Cannot delete the last active admin")
+
+    snapshot = UserAdminRead.model_validate(user)
+
+    for auth_session in session.exec(
+        select(AuthSession).where(AuthSession.user_id == user_id)
+    ).all():
+        session.delete(auth_session)
+    for challenge in session.exec(
+        select(MfaChallenge).where(MfaChallenge.user_id == user_id)
+    ).all():
+        session.delete(challenge)
+    for api_key in session.exec(
+        select(ApiKey).where((ApiKey.user_id == user_id) | (ApiKey.created_by_user_id == user_id))
+    ).all():
+        session.delete(api_key)
+    for person in session.exec(select(Person).where(Person.user_id == user_id)).all():
+        person.user_id = None
+        session.add(person)
+    for asset in session.exec(
+        select(MediaAsset).where(MediaAsset.uploaded_by_user_id == user_id)
+    ).all():
+        asset.uploaded_by_user_id = None
+        session.add(asset)
+
+    session.delete(user)
     session.commit()
-    session.refresh(user)
-    return UserAdminRead.model_validate(user)
+    return snapshot
 
 
 @router.post("/me/change-password", response_model=UserAdminRead)

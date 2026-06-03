@@ -50,6 +50,7 @@ const ADMIN_USER = {
   is_active: true,
   mfa_enabled: false,
   must_change_password: false,
+  entra_oid: null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };

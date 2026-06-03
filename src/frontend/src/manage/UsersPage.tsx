@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   createUser,
-  deactivateUser,
+  deleteUser,
+  getEntraConfig,
   getSetting,
   listUsers,
   resetUserPassword,
   updateUser,
   upsertSetting,
+  type EntraAdminConfig,
   type UserAdminCreatePayload,
   type UserAdminRead,
 } from "./api";
 import { Field } from "../shared/Field";
 import { LoadingState } from "../shared/LoadingState";
+import { Modal } from "../shared/Modal";
 import { StatusBanner } from "../shared/StatusBanner";
 import { useAuth } from "../shared/AuthContext";
+import { useConfirm } from "../shared/ConfirmDialog";
 import styles from "./ManagePage.module.css";
 
 const HIDE_LOCAL_ADMIN_BADGE_KEY = "auth.hide_local_admin_badge";
@@ -32,6 +36,12 @@ const ROLE_LABEL: Record<string, string> = {
   admin: "Admin",
 };
 
+type EditForm = {
+  username: string;
+  first_name: string;
+  last_name: string;
+};
+
 function emptyForm(): UserAdminCreatePayload {
   return {
     username: "",
@@ -44,7 +54,9 @@ function emptyForm(): UserAdminCreatePayload {
 }
 
 export function UsersPage() {
-  const { authEnabled } = useAuth();
+  const { authEnabled, providers } = useAuth();
+  const confirm = useConfirm();
+  const entraEnabled = providers.includes("entra");
   const [users, setUsers] = useState<UserAdminRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +66,14 @@ export function UsersPage() {
   const [resetTarget, setResetTarget] = useState<UserAdminRead | null>(null);
   const [resetPwd, setResetPwd] = useState("");
   const [resetSaving, setResetSaving] = useState(false);
+  const [editTarget, setEditTarget] = useState<UserAdminRead | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>({
+    username: "",
+    first_name: "",
+    last_name: "",
+  });
+  const [editSaving, setEditSaving] = useState(false);
+  const [entraConfig, setEntraConfig] = useState<EntraAdminConfig | null>(null);
   const [hideBadge, setHideBadge] = useState(false);
   const [savedHideBadge, setSavedHideBadge] = useState(false);
   const [savingBadge, setSavingBadge] = useState(false);
@@ -76,6 +96,19 @@ export function UsersPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!entraEnabled) return;
+    let cancelled = false;
+    getEntraConfig()
+      .then((cfg) => {
+        if (!cancelled) setEntraConfig(cfg);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [entraEnabled]);
 
   async function handleSaveBadge() {
     setSavingBadge(true);
@@ -144,14 +177,62 @@ export function UsersPage() {
   async function handleToggleActive(user: UserAdminRead) {
     setError(null);
     try {
-      if (user.is_active) {
-        await deactivateUser(user.id);
-      } else {
-        await updateUser(user.id, { is_active: true });
-      }
+      await updateUser(user.id, { is_active: !user.is_active });
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update user");
+    }
+  }
+
+  async function handleDelete(user: UserAdminRead) {
+    const ok = await confirm({
+      title: `Delete ${user.username}?`,
+      body: (
+        <>
+          This permanently removes the account and revokes its sessions and API
+          keys. Linked people and uploaded images are kept (just unlinked). This
+          cannot be undone.
+        </>
+      ),
+      danger: true,
+      confirmLabel: "Delete user",
+    });
+    if (!ok) return;
+    setError(null);
+    try {
+      await deleteUser(user.id);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete user");
+    }
+  }
+
+  function openEdit(user: UserAdminRead) {
+    setEditTarget(user);
+    setEditForm({
+      username: user.username,
+      first_name: user.first_name,
+      last_name: user.last_name,
+    });
+  }
+
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editTarget) return;
+    setEditSaving(true);
+    setError(null);
+    try {
+      await updateUser(editTarget.id, {
+        username: editForm.username,
+        first_name: editForm.first_name,
+        last_name: editForm.last_name,
+      });
+      setEditTarget(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update user");
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -178,7 +259,8 @@ export function UsersPage() {
       <div className={styles.header}>
         <h1>Users</h1>
         <p>
-          Create users, change roles, reset passwords, or deactivate accounts.
+          Create users, edit their details, change roles, reset passwords,
+          deactivate, or permanently delete accounts.
         </p>
       </div>
 
@@ -362,62 +444,131 @@ export function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
-              <tr key={u.id}>
-                <td>{u.username}</td>
-                <td>
-                  {u.first_name} {u.last_name}
-                </td>
-                <td>
-                  <select
-                    className={styles.input}
-                    value={u.role}
-                    onChange={(e) => void handleRoleChange(u, e.target.value)}
-                  >
-                    {ROLE_OPTIONS.map((r) => (
-                      <option key={r.value} value={r.value}>
-                        {ROLE_LABEL[r.value]}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <span
-                    className={`${styles.chip} ${u.is_active ? "" : styles.chipMuted}`}
-                  >
-                    {u.is_active ? "active" : "inactive"}
-                  </span>
-                </td>
-                <td>
-                  {u.mfa_enabled && <span className={styles.chip}>MFA</span>}{" "}
-                  {u.must_change_password && (
-                    <span className={styles.chip}>must-reset</span>
-                  )}
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className={styles.btnSecondary}
-                    onClick={() => {
-                      setResetTarget(u);
-                      setResetPwd("");
-                    }}
-                  >
-                    Reset password
-                  </button>{" "}
-                  <button
-                    type="button"
-                    className={styles.btnSecondary}
-                    onClick={() => void handleToggleActive(u)}
-                  >
-                    {u.is_active ? "Deactivate" : "Reactivate"}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {users.map((u) => {
+              const isEntra = u.entra_oid != null;
+              return (
+                <tr key={u.id}>
+                  <td>{u.username}</td>
+                  <td>
+                    {u.first_name} {u.last_name}
+                  </td>
+                  <td>
+                    {isEntra ? (
+                      ROLE_LABEL[u.role] ?? u.role
+                    ) : (
+                      <select
+                        className={styles.input}
+                        value={u.role}
+                        aria-label={`Role for ${u.username}`}
+                        onChange={(e) =>
+                          void handleRoleChange(u, e.target.value)
+                        }
+                      >
+                        {ROLE_OPTIONS.map((r) => (
+                          <option key={r.value} value={r.value}>
+                            {ROLE_LABEL[r.value]}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td>
+                    <span
+                      className={`${styles.chip} ${u.is_active ? "" : styles.chipMuted}`}
+                    >
+                      {u.is_active ? "active" : "inactive"}
+                    </span>
+                  </td>
+                  <td>
+                    {isEntra && <span className={styles.chip}>Entra</span>}{" "}
+                    {u.mfa_enabled && <span className={styles.chip}>MFA</span>}{" "}
+                    {u.must_change_password && (
+                      <span className={styles.chip}>must-reset</span>
+                    )}
+                  </td>
+                  <td>
+                    {isEntra ? (
+                      <span className={styles.sectionDesc}>
+                        Managed in Entra
+                      </span>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className={styles.btnSecondary}
+                          onClick={() => openEdit(u)}
+                        >
+                          Edit
+                        </button>{" "}
+                        <button
+                          type="button"
+                          className={styles.btnSecondary}
+                          onClick={() => {
+                            setResetTarget(u);
+                            setResetPwd("");
+                          }}
+                        >
+                          Reset password
+                        </button>{" "}
+                        <button
+                          type="button"
+                          className={styles.btnSecondary}
+                          onClick={() => void handleToggleActive(u)}
+                        >
+                          {u.is_active ? "Deactivate" : "Reactivate"}
+                        </button>{" "}
+                        <button
+                          type="button"
+                          className={styles.btnDanger}
+                          onClick={() => void handleDelete(u)}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </section>
+
+      {entraEnabled && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Entra group mapping</h2>
+          <p className={styles.sectionDesc}>
+            Users signing in through Microsoft Entra are provisioned
+            automatically and their role is synced from group membership on every
+            login, so their profile is read-only here. The mapping below is
+            configured via environment variables on the server.
+          </p>
+          {entraConfig && entraConfig.groups.length > 0 ? (
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Entra group object ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entraConfig.groups.map((g) => (
+                  <tr key={g.role}>
+                    <td>{ROLE_LABEL[g.role] ?? g.role}</td>
+                    <td>
+                      <code>{g.group_id}</code>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className={styles.sectionDesc}>
+              No Entra group→role mapping is configured.
+            </p>
+          )}
+        </section>
+      )}
 
       {!authEnabled && (
         <section className={styles.section}>
@@ -465,6 +616,77 @@ export function UsersPage() {
           </div>
         </section>
       )}
+
+      <Modal
+        open={editTarget !== null}
+        onClose={() => setEditTarget(null)}
+        title={editTarget ? `Edit ${editTarget.username}` : "Edit user"}
+      >
+        <form onSubmit={(e) => void handleEditSubmit(e)}>
+          <Field label="Username" required>
+            {({ id, invalid, required }) => (
+              <input
+                id={id}
+                className={styles.input}
+                value={editForm.username}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, username: e.target.value }))
+                }
+                required={required}
+                aria-invalid={invalid}
+                style={{ width: "100%" }}
+                autoFocus
+              />
+            )}
+          </Field>
+          <Field label="First name" required>
+            {({ id, invalid, required }) => (
+              <input
+                id={id}
+                className={styles.input}
+                value={editForm.first_name}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, first_name: e.target.value }))
+                }
+                required={required}
+                aria-invalid={invalid}
+                style={{ width: "100%" }}
+              />
+            )}
+          </Field>
+          <Field label="Last name" required>
+            {({ id, invalid, required }) => (
+              <input
+                id={id}
+                className={styles.input}
+                value={editForm.last_name}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, last_name: e.target.value }))
+                }
+                required={required}
+                aria-invalid={invalid}
+                style={{ width: "100%" }}
+              />
+            )}
+          </Field>
+          <div className={styles.actionsRow}>
+            <button
+              type="submit"
+              className={styles.btnPrimary}
+              disabled={editSaving}
+            >
+              {editSaving ? "Saving…" : "Save changes"}
+            </button>
+            <button
+              type="button"
+              className={styles.btnSecondary}
+              onClick={() => setEditTarget(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {resetTarget && (
         <div

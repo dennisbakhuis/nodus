@@ -58,13 +58,16 @@ export {
 } from "../api/cycles";
 
 export type {
+  EntraAdminConfig,
+  EntraGroupMapping,
   UserAdminCreatePayload,
   UserAdminRead,
   UserAdminUpdatePayload,
 } from "../api/users";
 export {
   createUser,
-  deactivateUser,
+  deleteUser,
+  getEntraConfig,
   listUsers,
   resetUserPassword,
   updateUser,
