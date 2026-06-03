@@ -8,6 +8,12 @@ import {
   type ReactNode,
 } from "react";
 import { AUTH_INVALID_EVENT } from "../api/client";
+import {
+  DEFAULT_CAPABILITIES,
+  getCapabilityConfig,
+  roleHasCapability,
+  type CapabilityConfig,
+} from "../api/capabilities";
 import { clearToken, getToken, setToken } from "./tokenStore";
 
 export type UserRole = "public_reader" | "reader" | "writer" | "admin";
@@ -39,6 +45,8 @@ type AuthContextValue = {
   // PublicReader can do, an anonymous visitor can do too.
   effectiveRole: UserRole;
   canBrowseCycles: boolean;
+  /** Whether the current role may open the list view (`/list`). Admin-configurable. */
+  canViewList: boolean;
   canOpenTopicDetail: boolean;
   canOpenFullTopicModal: boolean;
   authEnabled: boolean;
@@ -60,6 +68,7 @@ const Ctx = createContext<AuthContextValue>({
   isAuthenticated: false,
   effectiveRole: "public_reader",
   canBrowseCycles: true,
+  canViewList: false,
   canOpenTopicDetail: true,
   canOpenFullTopicModal: false,
   authEnabled: true,
@@ -91,6 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authEnabled, setAuthEnabled] = useState<boolean>(true);
   const [providers, setProviders] = useState<AuthProviderName[]>(["local"]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [capabilities, setCapabilities] =
+    useState<CapabilityConfig>(DEFAULT_CAPABILITIES);
+  const [capsReady, setCapsReady] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,6 +152,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setIsLoading(false);
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCapabilityConfig()
+      .then((caps) => {
+        if (!cancelled) setCapabilities(caps);
+      })
+      .catch(() => {
+        /* public read — keep defaults on failure */
+      })
+      .finally(() => {
+        if (!cancelled) setCapsReady(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -241,15 +270,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isAdmin = effectiveRole === "admin";
     return {
       user,
-      isLoading,
+      // Hold "loading" until both the auth check and the capability config have
+      // resolved, so capability-gated routes don't redirect-flash on a default
+      // (public-excluded) config before the admin's overrides are known.
+      isLoading: isLoading || !capsReady,
       isWriter,
       isAdmin,
       isAuthenticated: effectiveRole !== "public_reader",
       effectiveRole,
-      // Cycles list, topic-detail slide-in, and movement history all use
-      // OptionalUserDep server-side and filter via is_public_only(). Anonymous
-      // visitors get the public surface and should not be gated client-side.
-      canBrowseCycles: true,
+      // Cycle selector and list view are admin-configurable per role via the
+      // Visibility page; anonymous visitors map to public_reader and are
+      // excluded by default.
+      canBrowseCycles: roleHasCapability(
+        capabilities,
+        "cycle_selector",
+        effectiveRole,
+      ),
+      canViewList: roleHasCapability(capabilities, "list_view", effectiveRole),
       canOpenTopicDetail: true,
       // The full TopicDetailModal calls endpoints that require Writer+
       // (manage peer-references mutations, etc. — though reads are public,
@@ -267,6 +304,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [
     user,
     isLoading,
+    capsReady,
+    capabilities,
     authEnabled,
     providers,
     login,

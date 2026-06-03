@@ -32,15 +32,17 @@ type Props = {
 export function Layout({ children }: Props) {
   const [navOpen, setNavOpen] = useState(false);
   const { fullBleed } = useRadarCycle();
-  const { isWriter, isAuthenticated } = useAuth();
+  const { isWriter, isAuthenticated, canViewList } = useAuth();
   const { target: exportTarget } = useExportTarget();
   const { target: addTarget } = useAddAction();
   const { target: demoTarget } = useDemoMode();
   const reducedMotion = usePrefersReducedMotion();
   const showDemoBtn = !!demoTarget && !reducedMotion && isAuthenticated;
-  const navItems = isWriter
-    ? (["Radar", "List", "Manage"] as const)
-    : (["Radar", "List"] as const);
+  const navItems = [
+    "Radar",
+    ...(canViewList ? ["List"] : []),
+    ...(isWriter ? ["Manage"] : []),
+  ];
 
   return (
     <div
