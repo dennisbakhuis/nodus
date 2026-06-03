@@ -57,6 +57,44 @@ function filtersToParams(filters: FilterState): URLSearchParams {
   return p;
 }
 
+const SIDEBAR_COLLAPSED_KEY = "radar.sidebar.collapsed";
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+/** Slim left-edge handle shown in place of the sidebar when it's collapsed. */
+function ShowSidebarTab({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Show sidebar"
+      title="Show sidebar"
+      style={{
+        flexShrink: 0,
+        width: 28,
+        border: "none",
+        borderRight: "1px solid var(--color-ring-boundary)",
+        background: "var(--color-white)",
+        cursor: "pointer",
+        color: "var(--color-muted-text)",
+        fontSize: "var(--font-size-lg)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: "var(--space-2)",
+      }}
+    >
+      »
+    </button>
+  );
+}
+
 export function RadarPage() {
   const { slug: urlSlug } = useParams<{ slug?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -70,6 +108,16 @@ export function RadarPage() {
   const [data, setData] = useState<RadarData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] =
+    useState<boolean>(readCollapsed);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarCollapsed]);
 
   const [filters, setFilters] = useState<FilterState>(() =>
     filtersFromParams(searchParams),
@@ -328,27 +376,32 @@ export function RadarPage() {
           fontFamily: "var(--font-family)",
         }}
       >
-        <Sidebar
-          showZoom
-          zoom={zoom}
-          fitZoom={fitZoom}
-          onZoomSet={handleZoomSet}
-          onZoomReset={handleZoomReset}
-          entries={data.entries}
-          search={filters.search}
-          onSearchChange={(s) => setFilters((f) => ({ ...f, search: s }))}
-          onSearchSelect={(entry) => {
-            setFilters((f) => ({ ...f, search: entry.canonical_name }));
-            setSelectedEntry(entry);
-          }}
-          data={data}
-          filters={filters}
-          onFiltersChange={setFilters}
-          colorMode={colorMode}
-          onColorModeChange={setColorMode}
-          shapeMode={shapeMode}
-          onShapeModeChange={setShapeMode}
-        />
+        {sidebarCollapsed ? (
+          <ShowSidebarTab onClick={() => setSidebarCollapsed(false)} />
+        ) : (
+          <Sidebar
+            showZoom
+            zoom={zoom}
+            fitZoom={fitZoom}
+            onZoomSet={handleZoomSet}
+            onZoomReset={handleZoomReset}
+            entries={data.entries}
+            search={filters.search}
+            onSearchChange={(s) => setFilters((f) => ({ ...f, search: s }))}
+            onSearchSelect={(entry) => {
+              setFilters((f) => ({ ...f, search: entry.canonical_name }));
+              setSelectedEntry(entry);
+            }}
+            data={data}
+            filters={filters}
+            onFiltersChange={setFilters}
+            colorMode={colorMode}
+            onColorModeChange={setColorMode}
+            shapeMode={shapeMode}
+            onShapeModeChange={setShapeMode}
+            onCollapse={() => setSidebarCollapsed(true)}
+          />
+        )}
 
         <div
           style={{
