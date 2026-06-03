@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help backend frontend seed seed-dummy db-init db-reset seed-settings seed-demo-users backfill test test-backend test-frontend test-e2e version bump release docker-build docker-compose-build
+.PHONY: help backend frontend run stop seed seed-dummy db-init db-reset seed-settings seed-demo-users backfill test test-backend test-frontend test-e2e version bump release docker-build docker-compose-build
 
 help:  ## Show this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make <target>\n\nTargets:\n"} \
@@ -14,6 +14,12 @@ backend:  ## Run the FastAPI backend with auto-reload (port 8000)
 
 frontend:  ## Run the Vite frontend dev server (port 5173)
 	cd src/frontend && npm install && npm run dev
+
+run:  ## Start backend (8000) + frontend (5173) in the background (logs in .run/)
+	./scripts/dev-servers.sh start
+
+stop:  ## Stop the backend + frontend started by `make run`
+	./scripts/dev-servers.sh stop
 
 ## DB lifecycle
 
