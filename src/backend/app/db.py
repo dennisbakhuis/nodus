@@ -198,17 +198,29 @@ def _apply_post_create_migrations(engine_to_use: object) -> None:
             _ensure_column(session, "technology", "movement", "movement VARCHAR")
             _ensure_column(session, "technology", "created_by_id", "created_by_id VARCHAR")
 
-        person_rows = session.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table' AND name='person'")
-        ).fetchall()
-        if person_rows:
+
+def _ensure_person_profiles(engine_to_use: object) -> None:
+    """Enforce one-profile-per-account and backfill missing People profiles.
+
+    Runs on every dialect (SQLite + Postgres), unlike `_apply_post_create_migrations`
+    which is SQLite-only. Adds the unique `person.user_id` index for databases that
+    predate it (no-op when already present) and creates a linked Person for any user
+    that lacks one — covering pre-existing local/Entra accounts and restored backups.
+    `CREATE UNIQUE INDEX IF NOT EXISTS` is valid on both SQLite and Postgres, and
+    both treat NULLs as distinct so account-less People are unaffected.
+    """
+    from app.services.persons import backfill_person_profiles
+
+    with Session(engine_to_use) as session:  # type: ignore[arg-type]
+        try:
             session.execute(
-                text("CREATE UNIQUE INDEX IF NOT EXISTS uq_person_user_id ON person(user_id)")
+                text("CREATE UNIQUE INDEX IF NOT EXISTS uq_person_user_id ON person (user_id)")
             )
             session.commit()
-            from app.services.persons import backfill_person_profiles
-
-            backfill_person_profiles(session)
+        except Exception:
+            session.rollback()
+            _log.warning("Could not create uq_person_user_id index; continuing.", exc_info=True)
+        backfill_person_profiles(session)
 
 
 def create_db_and_tables() -> None:
@@ -247,11 +259,13 @@ def create_db_and_tables() -> None:
                 _db.engine = new_engine
                 SQLModel.metadata.create_all(new_engine)
                 _apply_post_create_migrations(new_engine)
+                _ensure_person_profiles(new_engine)
                 return
 
     SQLModel.metadata.create_all(engine)
     if IS_SQLITE:
         _apply_post_create_migrations(engine)
+    _ensure_person_profiles(engine)
 
 
 def get_session() -> Generator[Session]:

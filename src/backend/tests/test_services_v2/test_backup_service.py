@@ -575,3 +575,23 @@ class TestUserPersonLinkRestore:
         # Backfill gave the restored user a profile; the standalone survives.
         assert get_person_for_user(session, user_id) is not None
         assert len(session.exec(select(Person)).all()) == 2
+
+    def test_addon_restore_backfills_missing_profiles(self, session: Session) -> None:
+        from app.services.persons import get_person_for_user
+
+        user = User(
+            username="addon-user",
+            first_name="Add",
+            last_name="On",
+            role=UserRole.Reader.value,
+            password_hash="x",
+        )
+        session.add(user)
+        session.commit()
+        user_id = user.id
+        assert get_person_for_user(session, user_id) is None
+
+        payload = export_backup(session)
+        restore_backup(session, payload, mode="addon")
+
+        assert get_person_for_user(session, user_id) is not None
