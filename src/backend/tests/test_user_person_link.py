@@ -444,3 +444,47 @@ def test_merge_endpoint_both_linked_409(
         json={"target_id": str(p2.id)},
     )
     assert resp.status_code == 409
+
+
+def test_get_my_profile_adopts_existing_unlinked_record(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+    session: Session,
+) -> None:
+    """Regression: logging in adopts an account-less same-name record instead of
+    creating a second, duplicate People profile."""
+    user, token = make_user(role=UserRole.Reader, first_name="Existing", last_name="Person")
+    twin = Person(full_name="Existing Person", company="Acme")
+    session.add(twin)
+    session.commit()
+    twin_id = twin.id
+
+    resp = anon_client.get("/api/auth/me/profile", headers=auth_header(token))
+    assert resp.status_code == 200
+    assert resp.json()["id"] == str(twin_id)  # adopted, not a fresh stub
+
+    session.expire_all()
+    assert session.get(Person, twin_id).user_id == user.id
+    matches = session.exec(select(Person).where(Person.full_name == "Existing Person")).all()
+    assert len(matches) == 1  # no duplicate created
+
+
+def test_get_my_profile_creates_stub_when_no_match(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+    session: Session,
+) -> None:
+    """A genuinely new user (no matching record) gets a fresh blank profile to complete."""
+    user, token = make_user(role=UserRole.Reader, first_name="Brand", last_name="New")
+
+    resp = anon_client.get("/api/auth/me/profile", headers=auth_header(token))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["full_name"] == "Brand New"
+    assert body["company"] == ""
+
+    session.expire_all()
+    linked = session.exec(select(Person).where(Person.user_id == user.id)).all()
+    assert len(linked) == 1
