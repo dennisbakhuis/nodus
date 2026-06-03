@@ -316,3 +316,175 @@ def test_bootstrap_seed_creates_linked_person(session: Session, monkeypatch) -> 
     admin = session.exec(select(User).where(User.username == "seedadmin")).first()
     assert admin is not None
     assert get_person_for_user(session, admin.id) is not None
+
+
+def test_self_profile_candidates_lists_matches(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+    session: Session,
+) -> None:
+    user, token = make_user(role=UserRole.Reader, first_name="Claim", last_name="Me")
+    twin = Person(full_name="Claim Me", company="Acme")
+    session.add(twin)
+    session.commit()
+    session.refresh(twin)
+
+    resp = anon_client.get("/api/auth/me/profile/candidates", headers=auth_header(token))
+    assert resp.status_code == 200
+    assert any(c["id"] == str(twin.id) for c in resp.json())
+
+
+def test_link_my_profile_replaces_blank_stub(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+    session: Session,
+) -> None:
+    user, token = make_user(role=UserRole.Reader, first_name="Stub", last_name="User")
+    stub = Person(full_name="Stub User", company="", user_id=user.id)
+    twin = Person(full_name="Stub User", company="Acme", email="s@u.com")
+    session.add(stub)
+    session.add(twin)
+    session.commit()
+    stub_id, twin_id = stub.id, twin.id
+
+    resp = anon_client.post(
+        "/api/auth/me/profile/link",
+        headers=auth_header(token),
+        json={"person_id": str(twin_id)},
+    )
+    assert resp.status_code == 200, resp.text
+    session.expire_all()
+    assert session.get(Person, stub_id) is None
+    assert session.get(Person, twin_id).user_id == user.id
+
+
+def test_link_my_profile_rejects_already_linked(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+    session: Session,
+) -> None:
+    user, token = make_user(role=UserRole.Reader, first_name="Claim", last_name="Two")
+    other, _ = make_user(role=UserRole.Reader)
+    taken = Person(full_name="Claim Two", company="Acme", user_id=other.id)
+    session.add(taken)
+    session.commit()
+
+    resp = anon_client.post(
+        "/api/auth/me/profile/link",
+        headers=auth_header(token),
+        json={"person_id": str(taken.id)},
+    )
+    assert resp.status_code == 409
+
+
+def test_merge_endpoint_merges_and_deletes_source(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+    session: Session,
+) -> None:
+    _, admin_token = make_user(role=UserRole.Admin)
+    source = Person(full_name="M1", company="Acme")
+    target = Person(full_name="M2", company="Beta")
+    session.add(source)
+    session.add(target)
+    session.commit()
+    source_id, target_id = source.id, target.id
+
+    resp = anon_client.post(
+        f"/api/manage/persons/{source_id}/merge",
+        headers=auth_header(admin_token),
+        json={"target_id": str(target_id)},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["id"] == str(target_id)
+    session.expire_all()
+    assert session.get(Person, source_id) is None
+
+
+def test_merge_endpoint_self_400(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+    session: Session,
+) -> None:
+    _, admin_token = make_user(role=UserRole.Admin)
+    person = Person(full_name="Solo", company="X")
+    session.add(person)
+    session.commit()
+
+    resp = anon_client.post(
+        f"/api/manage/persons/{person.id}/merge",
+        headers=auth_header(admin_token),
+        json={"target_id": str(person.id)},
+    )
+    assert resp.status_code == 400
+
+
+def test_merge_endpoint_both_linked_409(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+    session: Session,
+) -> None:
+    admin, admin_token = make_user(role=UserRole.Admin)
+    other, _ = make_user(role=UserRole.Reader)
+    p1 = Person(full_name="L", company="A", user_id=admin.id)
+    p2 = Person(full_name="L", company="B", user_id=other.id)
+    session.add(p1)
+    session.add(p2)
+    session.commit()
+
+    resp = anon_client.post(
+        f"/api/manage/persons/{p1.id}/merge",
+        headers=auth_header(admin_token),
+        json={"target_id": str(p2.id)},
+    )
+    assert resp.status_code == 409
+
+
+def test_get_my_profile_adopts_existing_unlinked_record(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+    session: Session,
+) -> None:
+    """Regression: logging in adopts an account-less same-name record instead of
+    creating a second, duplicate People profile."""
+    user, token = make_user(role=UserRole.Reader, first_name="Existing", last_name="Person")
+    twin = Person(full_name="Existing Person", company="Acme")
+    session.add(twin)
+    session.commit()
+    twin_id = twin.id
+
+    resp = anon_client.get("/api/auth/me/profile", headers=auth_header(token))
+    assert resp.status_code == 200
+    assert resp.json()["id"] == str(twin_id)  # adopted, not a fresh stub
+
+    session.expire_all()
+    assert session.get(Person, twin_id).user_id == user.id
+    matches = session.exec(select(Person).where(Person.full_name == "Existing Person")).all()
+    assert len(matches) == 1  # no duplicate created
+
+
+def test_get_my_profile_creates_stub_when_no_match(
+    anon_client: TestClient,
+    make_user: Callable[..., tuple[User, str]],
+    auth_header: Callable[[str], dict[str, str]],
+    session: Session,
+) -> None:
+    """A genuinely new user (no matching record) gets a fresh blank profile to complete."""
+    user, token = make_user(role=UserRole.Reader, first_name="Brand", last_name="New")
+
+    resp = anon_client.get("/api/auth/me/profile", headers=auth_header(token))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["full_name"] == "Brand New"
+    assert body["company"] == ""
+
+    session.expire_all()
+    linked = session.exec(select(Person).where(Person.user_id == user.id)).all()
+    assert len(linked) == 1

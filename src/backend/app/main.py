@@ -203,7 +203,7 @@ def seed_bootstrap_admin(session: Session) -> None:
     session.add(admin)
     session.commit()
     session.refresh(admin)
-    ensure_person_for_user(session, admin)
+    ensure_person_for_user(session, admin, adopt_match=True)
     _log.info("Created bootstrap admin %r.", username)
 
 

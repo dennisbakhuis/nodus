@@ -30,6 +30,12 @@ class PersonUpdate(BaseModel):
     user_id: uuid.UUID | None = None
 
 
+class PersonMerge(BaseModel):
+    """Request schema for merging one Person into another."""
+
+    target_id: uuid.UUID
+
+
 class PersonReadPublic(BaseModel):
     """Public-facing Person schema — excludes PII fields email and notes."""
 

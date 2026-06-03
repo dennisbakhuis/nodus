@@ -322,6 +322,7 @@ def _resolve_or_provision_user(
         session,
         user,
         email=str(claim_email) if claim_email else None,
+        adopt_match=True,
     )
     _log.info(
         "Entra JIT provisioning: created user %s (oid=%s, role=%s)",

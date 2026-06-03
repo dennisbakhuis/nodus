@@ -26,6 +26,9 @@ Commands
 ``backfill [--hero-images] [--person-profiles] [--all]``
     Run one or more backfill steps. Idempotent. ``--person-profiles`` gives every
     account that lacks one a linked People profile (local, Entra, or restored).
+``dedup-people [--apply]``
+    Merge accounts whose linked People profile duplicates an account-less same-name
+    record (e.g. a restored backup). Dry-run by default; ``--apply`` performs them.
 ``create-admin --username <name> [--first-name <fn>] [--last-name <ln>] [--force]``
     Create a local admin user, prompting for the password via ``getpass``.
     Refuses to clobber an existing user unless ``--force`` is passed. Use this
@@ -247,6 +250,35 @@ def _cmd_backfill(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_dedup_people(args: argparse.Namespace) -> int:
+    from app.db import engine
+    from app.services.persons import dedup_person_profiles
+
+    with Session(engine) as session:
+        planned = dedup_person_profiles(session, apply=args.apply)
+
+    if not planned:
+        logger.info("No duplicate People profiles found.")
+        return 0
+    verb = "Merged" if args.apply else "Would merge"
+    for row in planned:
+        logger.info(
+            "%s '%s' (account %s): source %s -> target %s",
+            verb,
+            row["full_name"],
+            row["username"],
+            row["source"],
+            row["target"],
+        )
+    logger.info(
+        "%s %d duplicate(s)%s.",
+        verb,
+        len(planned),
+        "" if args.apply else " — re-run with --apply to perform the merges",
+    )
+    return 0
+
+
 def _resolve_seed_targets(args: argparse.Namespace) -> set[str]:
     if args.all:
         return {"settings", "users", "movements"}
@@ -321,6 +353,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     backfill.add_argument("--all", action="store_true", help="Run every backfill step")
     backfill.set_defaults(func=_cmd_backfill)
+
+    dedup = sub.add_parser(
+        "dedup-people",
+        help="Merge accounts whose linked People profile duplicates an account-less twin",
+    )
+    dedup.add_argument(
+        "--apply",
+        action="store_true",
+        help="Perform the merges (default: dry-run that only reports them)",
+    )
+    dedup.set_defaults(func=_cmd_dedup_people)
 
     admin = sub.add_parser(
         "create-admin",
