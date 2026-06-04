@@ -39,10 +39,12 @@
 # Docs & markdown (rebuilt outside the image)
 docs
 **/*.md
-# …but keep markdown that the frontend bundles via import.meta.glob,
+# …but keep markdown that the frontend bundles (import.meta.glob / ?raw),
 # otherwise the in-app Help panel falls back to
-# "No help content available for this page yet."
+# "No help content available for this page yet." and the Guide page fails to
+# build (unresolved ?raw import).
 !src/frontend/src/help/content/*.md
+!src/frontend/src/guide/content/*.md
 
 # Editor / OS noise
 .vscode
