@@ -2,16 +2,16 @@
 
 Welcome to **Nodus**, the technology radar.
 
-Use the navigation in the top bar to switch between views:
+Use the tabs in the top bar to move around:
 
 - **Radar** — explore technologies plotted across segments and rings.
 - **List** — the same technologies in a sortable, filterable table.
-- **Manage** — administer cycles, segments, users, and more (writers only).
+- **Manage** — administer cycles, segments, groups, people, and more
+  (writers only).
+- **Guide** — the methodology handbook behind the radar.
 
-Click the **Help** button on any page to read documentation tailored to what
-you're currently looking at.
+The **List** and **Manage** tabs appear only if your role allows them.
 
-## Need more?
-
-The full project documentation lives in the [`docs/`](https://github.com/)
-folder of the repository.
+Click the **Help** button on any page for guidance about what you're looking at.
+For the bigger picture — why the radar works the way it does — open the
+**Guide** tab.

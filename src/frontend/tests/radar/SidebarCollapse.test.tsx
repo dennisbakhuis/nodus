@@ -43,8 +43,8 @@ const filters: FilterState = {
   hasPeerRefs: null,
   timeToMainstream: [],
   personIds: [],
-  candidatesOnly: false,
   visibility: "all",
+  groupId: null,
 };
 
 function renderSidebar(extra: Partial<Parameters<typeof Sidebar>[0]> = {}) {

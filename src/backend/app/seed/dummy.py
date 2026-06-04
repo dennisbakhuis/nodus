@@ -150,6 +150,30 @@ RELATIONS: tuple[tuple[str, str, RelationType], ...] = (
 )
 
 
+# Grouping hierarchy (child_slug, parent_slug). Demonstrates all three levels
+# AND the mixed case: "Generative AI" is itself a radar entry that also acts as
+# a parent group, while "Artificial Intelligence" is a pure label (no Technology).
+GROUP_PARENTS: tuple[tuple[str, str], ...] = (
+    # Family 1 — Artificial Intelligence (pure label umbrella).
+    ("generative-ai", "artificial-intelligence"),
+    ("ai-agents", "generative-ai"),
+    ("rag", "generative-ai"),
+    ("multi-agent-systems", "ai-agents"),
+    ("federated-learning", "artificial-intelligence"),
+    # Family 2 — Platforms & Infrastructure (second pure-label umbrella).
+    ("cloud-computing", "platforms-infrastructure"),
+    ("edge-computing", "cloud-computing"),
+    ("platform-engineering", "platforms-infrastructure"),
+    ("digital-twins", "platforms-infrastructure"),
+)
+
+# Pure-label group topics created without a Technology (name, slug).
+LABEL_GROUPS: tuple[tuple[str, str], ...] = (
+    ("Artificial Intelligence", "artificial-intelligence"),
+    ("Platforms & Infrastructure", "platforms-infrastructure"),
+)
+
+
 def _ref(
     party: str,
     title: str,
@@ -1281,6 +1305,39 @@ def _seed_relations(session: Session) -> int:
 _RELATION_SLUGS = sorted({s for triple in RELATIONS for s in (triple[0], triple[1])})
 
 
+def _seed_groups(session: Session) -> int:
+    """Build the example grouping hierarchy via parent_topic_id. Idempotent.
+
+    Creates pure-label group topics (no Technology) as needed, then links each
+    child to its parent. Returns the number of parent links newly set.
+    """
+    for name, slug in LABEL_GROUPS:
+        if session.exec(select(Topic).where(Topic.slug == slug)).first() is None:
+            session.add(
+                Topic(canonical_name=name, slug=slug, not_for_external_publication=False)
+            )
+    session.flush()
+
+    slugs = {s for pair in GROUP_PARENTS for s in pair}
+    topic_by_slug = {
+        t.slug: t for t in session.exec(select(Topic).where(col(Topic.slug).in_(slugs))).all()
+    }
+    linked = 0
+    for child_slug, parent_slug in GROUP_PARENTS:
+        child = topic_by_slug.get(child_slug)
+        parent = topic_by_slug.get(parent_slug)
+        if child is None or parent is None:
+            logger.warning(
+                "dummy: group link skipped — missing topic (%s -> %s)", child_slug, parent_slug
+            )
+            continue
+        if child.parent_topic_id != parent.id:
+            child.parent_topic_id = parent.id
+            session.add(child)
+            linked += 1
+    return linked
+
+
 def seed_dummy(session: Session) -> dict[str, int]:
     """Run the full dummy seed against an existing Session.
 
@@ -1300,6 +1357,7 @@ def seed_dummy(session: Session) -> dict[str, int]:
         "initiatives": 0,
         "hero_images": 0,
         "relations": 0,
+        "groups": 0,
     }
 
     if _seed_cycle(session):
@@ -1331,6 +1389,7 @@ def seed_dummy(session: Session) -> dict[str, int]:
 
     session.flush()
     counts["relations"] = _seed_relations(session)
+    counts["groups"] = _seed_groups(session)
     session.commit()
     return counts
 

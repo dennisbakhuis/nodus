@@ -1,28 +1,31 @@
-# Import
+# Import References
 
-Import **peer references** — pointers to how other organisations have
-classified the same technology — from a JSON export.
+Bring in **peer references** — how other organisations classify the same
+technologies — from a JSON export (the `nodus-peer-reference` format produced by
+another Nodus instance's peer-reference export).
 
-## Source format
+Three steps:
 
-Files must be in the `nodus-peer-reference` envelope format, produced by
-the _Export → Peer references (JSON)_ action on another Nodus instance.
+## 1. Upload
 
-Drop one or more JSON files into the upload area to begin.
+Choose one JSON file. The app reads its **peer organisation** and **source**,
+which you can edit before importing: name, slug, website, and the source name and
+URL (name and source name are required). It shows whether the party **matches an
+existing** one or **will be created**.
 
-## Matching topics
+## 2. Review & link
 
-The importer attempts to auto-match each incoming row to a topic in this
-radar by slug, then by exact name. Rows shown as **auto-matched** can be
-imported as-is; unmatched rows let you pick a target topic from a dropdown,
-or untick **Include** to skip them.
+Each incoming reference is matched to a local technology — automatically by slug,
+then by exact name. For each row you can pick a different target from the dropdown
+(or **skip** it), and the **Action** chip shows whether it will **add a new**
+reference or **overwrite** an existing one for that party. Bulk actions let you
+select all matched rows or none.
 
-## Parties
+## 3. Import
 
-Each peer reference belongs to a _party_ (the peer organisation). Parties
-not present in this instance are created on import.
+Run a **preview (dry run)** first — it summarises what will happen: party and
+source resolved or created, matched/unmatched counts, references added or
+updated, and URLs added. Then **Import** to commit.
 
-## After import
-
-Imported references appear in each topic's detail panel under _Peer
-references_. You can edit or delete them from the topic detail modal.
+Imported references appear in each technology's detail panel under *Peer
+references*.

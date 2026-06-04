@@ -1,22 +1,27 @@
 # Settings
 
-Organisation-wide settings that brand the radar and identify the host
-organisation.
+Organisation-wide settings. Each section has its own **Save**.
 
-## Logo
+## Organisation details
 
-- **Centre logo** — shown in the middle of the radar. Use a square,
-  high-contrast image; transparent PNG or SVG works best.
-- Choose **Nodus mark** to keep the default brand mark, or upload your own.
+**Name**, **Slug** (URL-safe), **Website**, **Contact email**, and **Address**.
+These are used as defaults on exports and other shared payloads — for example
+peer-reference exports.
 
-Custom logos are stored inline as data URLs (cap ~512 KB). Larger images are
-rejected to keep page loads fast.
+## Radar centre logo
 
-## Organisation identity
+Shown at the bottom-centre of the radar half-circle. Choose:
 
-- **Name** — full organisation name, shown in the header and exports.
-- **Slug** — short identifier used in URLs and file names.
-- **URL**, **Contact email**, **Address** — surfaced in generated briefs
-  and the API metadata endpoint.
+- **Nodus logo + text (default)** — the built-in mark; this also removes the
+  corner watermark from exports.
+- **Custom** — upload your own (**PNG, JPEG, WebP, or SVG**, up to **512 KB**),
+  stored inline. Use Replace / Remove; a preview is shown.
 
-Changes take effect immediately for new page loads.
+## Presentation mode
+
+A self-running tour for unattended displays. Enable it to show a **▶** button on
+the radar (any real interaction stops the tour), then tune:
+
+- **Seconds per step** (1–60).
+- **Scroll the side panel** — the share of stops that scroll the detail panel.
+- **Open full detail** — the share of stops that open the full modal.

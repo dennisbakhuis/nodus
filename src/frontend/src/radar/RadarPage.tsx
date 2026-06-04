@@ -43,8 +43,8 @@ function filtersFromParams(params: URLSearchParams): FilterState {
     hasPeerRefs: null,
     timeToMainstream: [],
     personIds: [],
-    candidatesOnly: false,
     visibility: "all",
+    groupId: params.get("group"),
   };
 }
 
@@ -54,6 +54,7 @@ function filtersToParams(filters: FilterState): URLSearchParams {
   filters.rings.forEach((r) => p.append("ring", r));
   filters.movements.forEach((m) => p.append("movement", m));
   if (filters.search) p.set("search", filters.search);
+  if (filters.groupId) p.set("group", filters.groupId);
   return p;
 }
 

@@ -17,8 +17,8 @@ const baseFilters: FilterState = {
   hasPeerRefs: null,
   timeToMainstream: [],
   personIds: [],
-  candidatesOnly: false,
   visibility: "all",
+  groupId: null,
 };
 
 function Harness() {

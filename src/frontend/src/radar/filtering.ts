@@ -13,6 +13,7 @@ import type {
   RadarEntry,
   RingName,
 } from "./types";
+import { matchesGroup } from "./types";
 
 export function cellMatchesFilter(
   segName: string,
@@ -23,6 +24,29 @@ export function cellMatchesFilter(
     return false;
   if (filters.rings.length > 0 && !filters.rings.includes(ringName as RingName))
     return false;
+  return true;
+}
+
+/**
+ * TRL range + time-to-mainstream checks, shared by the radar (`isVisible`) and
+ * the list (`isVisibleInList`) so the dual-handle sliders dim/hide the same
+ * entries in both surfaces.
+ */
+function matchesTrlAndTime(entry: RadarEntry, filters: FilterState): boolean {
+  if (filters.minTrl != null) {
+    if (entry.trl == null || entry.trl < filters.minTrl) return false;
+  }
+  if (filters.maxTrl != null) {
+    if (entry.trl == null || entry.trl > filters.maxTrl) return false;
+  }
+  if (filters.timeToMainstream.length > 0) {
+    if (
+      !entry.time_to_mainstream ||
+      !filters.timeToMainstream.includes(entry.time_to_mainstream)
+    ) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -55,6 +79,12 @@ export function isVisible(
       return false;
     }
   }
+  if (filters.strategicRelevance.length > 0) {
+    const sr = entry.strategic_relevance;
+    if (!sr || !filters.strategicRelevance.includes(sr)) return false;
+  }
+  if (!matchesTrlAndTime(entry, filters)) return false;
+  if (!matchesGroup(entry, filters.groupId)) return false;
   return true;
 }
 
@@ -63,8 +93,6 @@ export function isVisibleInList(
   data: RadarData,
   filters: FilterState,
 ): boolean {
-  const isCandidate = entry.technology_id == null;
-  if (filters.candidatesOnly && !isCandidate) return false;
   if (filters.visibility !== "all") {
     const isPrivate = entry.not_for_external_publication === true;
     if (filters.visibility === "private" && !isPrivate) return false;
@@ -79,11 +107,7 @@ export function isVisibleInList(
   ) {
     return false;
   }
-  if (
-    filters.registryStatuses.length > 0 &&
-    entry.registry_status == null &&
-    !filters.candidatesOnly
-  ) {
+  if (filters.registryStatuses.length > 0 && entry.registry_status == null) {
     return false;
   }
   const seg = data.segments.find((s) => s.id === entry.segment_id);
@@ -112,9 +136,7 @@ export function isVisibleInList(
     const sr = entry.strategic_relevance;
     if (!sr || !filters.strategicRelevance.includes(sr)) return false;
   }
-  if (filters.minTrl != null) {
-    if (entry.trl == null || entry.trl < filters.minTrl) return false;
-  }
+  if (!matchesTrlAndTime(entry, filters)) return false;
   if (filters.hasFactsheet !== null) {
     const has = !!(entry.summary && entry.summary.trim().length > 0);
     if (filters.hasFactsheet !== has) return false;
@@ -123,14 +145,6 @@ export function isVisibleInList(
     const has = (entry.peer_reference_count ?? 0) > 0;
     if (filters.hasPeerRefs !== has) return false;
   }
-  if (filters.timeToMainstream.length > 0) {
-    if (
-      !entry.time_to_mainstream ||
-      !filters.timeToMainstream.includes(entry.time_to_mainstream)
-    ) {
-      return false;
-    }
-  }
   if ((filters.personIds?.length ?? 0) > 0) {
     const personIds = filters.personIds ?? [];
     const hasMatch = (entry.persons ?? []).some((link) =>
@@ -138,6 +152,7 @@ export function isVisibleInList(
     );
     if (!hasMatch) return false;
   }
+  if (!matchesGroup(entry, filters.groupId)) return false;
   return true;
 }
 

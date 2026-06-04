@@ -88,6 +88,13 @@ class RadarEntry(BaseModel):
     # callers never see private topics in the first place (visibility config
     # already filters them out at the topic level).
     not_for_external_publication: bool = False
+    # Grouping hierarchy (adjacency list on Topic). ``ancestor_path`` is
+    # root-first and already filtered to publicly-visible ancestors for the
+    # current viewer; ``root_group_id`` is the top-most ancestor (or the topic
+    # itself when ungrouped) and drives "group by" bucketing in the list view.
+    parent_topic_id: str | None = None
+    ancestor_path: list[str] = []
+    root_group_id: str | None = None
 
     model_config = {"extra": "allow"}
 

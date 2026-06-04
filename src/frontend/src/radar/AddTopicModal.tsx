@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { Modal } from "../shared/Modal";
 import { Field } from "../shared/Field";
 import { ApiError, createTopic } from "../api/client";
+import { listTopics } from "../api/topics";
+import {
+  ParentOptionGroups,
+  topicsToParentOptions,
+  type ParentOption,
+} from "../shared/ParentOptions";
 import type { RadarRing, RadarSegment } from "./types";
 import type {
   Ring,
@@ -35,6 +41,8 @@ export function AddTopicModal({
   const [submitting, setSubmitting] = useState(false);
   const [candidates, setCandidates] = useState<TopicCandidate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [parentId, setParentId] = useState<string>("");
+  const [groupOptions, setGroupOptions] = useState<ParentOption[]>([]);
 
   useEffect(() => {
     if (!open) {
@@ -46,7 +54,22 @@ export function AddTopicModal({
       setSubmitting(false);
       setCandidates(null);
       setError(null);
+      setParentId("");
+      return;
     }
+    let cancelled = false;
+    // Any technology can be a parent group — offer all topics, not just the
+    // ones already in the hierarchy.
+    listTopics({ limit: 200 })
+      .then((tops) => {
+        if (!cancelled) setGroupOptions(topicsToParentOptions(tops));
+      })
+      .catch(() => {
+        /* grouping is optional */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   const sortedSegments = [...segments].sort((a, b) => a.order - b.order);
@@ -71,6 +94,7 @@ export function AddTopicModal({
       registry_status: placeOnRadar ? "On Radar" : "Backlog",
       current_ring: placeOnRadar ? (ring as Ring) : null,
       current_segment_id: placeOnRadar ? segmentId : null,
+      parent_topic_id: parentId || null,
     };
     setSubmitting(true);
     try {
@@ -157,6 +181,23 @@ export function AddTopicModal({
             />
             <span>Place on radar now (otherwise stays in Backlog)</span>
           </label>
+
+          {groupOptions.length > 0 && (
+            <Field label="Parent group (optional)">
+              {({ id, describedBy }) => (
+                <select
+                  id={id}
+                  aria-describedby={describedBy}
+                  value={parentId}
+                  onChange={(e) => setParentId(e.target.value)}
+                  style={inputStyle}
+                  disabled={submitting}
+                >
+                  <ParentOptionGroups options={groupOptions} />
+                </select>
+              )}
+            </Field>
+          )}
 
           {placeOnRadar && (
             <>

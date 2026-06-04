@@ -106,17 +106,34 @@ export type FilterState = {
   movements: MovementStatus[];
   search: string;
   strategicRelevance: string[];
+  /** Lower bound of the TRL range filter (inclusive). `null` = no lower bound. */
   minTrl: number | null;
+  /** Upper bound of the TRL range filter (inclusive). `null` = no upper bound. */
+  maxTrl?: number | null;
   registryStatuses: RegistryStatusName[];
   hasFactsheet: boolean | null;
   hasPeerRefs: boolean | null;
   timeToMainstream: string[];
   personIds: string[];
-  /** Writer-only list-view toggle: restrict to topics without a Technology. */
-  candidatesOnly: boolean;
   /** Writer-only list-view filter on the Topic visibility flag. */
   visibility: "all" | "public" | "private";
+  /**
+   * Topic id of a selected group. When set, only the group itself and its
+   * descendants stay visible — highlighting members on the radar exactly like
+   * the search box dims non-matches. `null` is a no-op.
+   */
+  groupId: string | null;
 };
+
+/** Whether an entry belongs to the selected group (is the group or a descendant). */
+export function matchesGroup(
+  entry: { topic_id: string; ancestor_path?: string[] | null },
+  groupId: string | null,
+): boolean {
+  if (!groupId) return true;
+  if (entry.topic_id === groupId) return true;
+  return (entry.ancestor_path ?? []).includes(groupId);
+}
 
 export type TopicRelation = {
   id: string;

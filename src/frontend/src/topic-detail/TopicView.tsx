@@ -89,6 +89,12 @@ type InlineEditProps = {
     persons: TopicDetailNested["persons"];
     onChange: () => void | Promise<void>;
   };
+  /**
+   * In edit mode, replace the read-only "Part of" (group) and "Relations"
+   * sections in place with their editable controls.
+   */
+  groupEditor?: React.ReactNode;
+  relationsEditor?: React.ReactNode;
 };
 
 type Props = {
@@ -196,14 +202,25 @@ export function TopicView({
           <PersonsSection persons={detail.persons ?? []} />
         )
       )}
-      {radarContext && (
-        <RelationsSection
-          entry={radarContext.entry}
-          relations={radarContext.relations}
-          data={radarContext.data}
-          onNavigate={radarContext.onNavigate}
-        />
-      )}
+      {inlineEdit?.groupEditor
+        ? inlineEdit.groupEditor
+        : radarContext && (
+            <PartOfSection
+              detail={detail}
+              data={radarContext.data}
+              onNavigate={radarContext.onNavigate}
+            />
+          )}
+      {inlineEdit?.relationsEditor
+        ? inlineEdit.relationsEditor
+        : radarContext && (
+            <RelationsSection
+              entry={radarContext.entry}
+              relations={radarContext.relations}
+              data={radarContext.data}
+              onNavigate={radarContext.onNavigate}
+            />
+          )}
       <MovementTimeline events={events} />
       {detail.created_by && <CreatedByFooter createdBy={detail.created_by} />}
     </>
@@ -242,9 +259,14 @@ export function TopicView({
               gap: var(--space-6);
               align-items: start;
             }
+            /* Allow both tracks' content to shrink instead of overflowing the
+               modal (e.g. the People picker row on narrow side columns). */
+            .topic-view-grid > div {
+              min-width: 0;
+            }
             @media (min-width: 900px) {
               .topic-view-grid {
-                grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+                grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
               }
             }
           `}</style>
@@ -260,14 +282,25 @@ export function TopicView({
             )
           )}
           {assessmentNode}
-          {radarContext && (
-            <RelationsSection
-              entry={radarContext.entry}
-              relations={radarContext.relations}
-              data={radarContext.data}
-              onNavigate={radarContext.onNavigate}
-            />
-          )}
+          {inlineEdit?.groupEditor
+            ? inlineEdit.groupEditor
+            : radarContext && (
+                <PartOfSection
+                  detail={detail}
+                  data={radarContext.data}
+                  onNavigate={radarContext.onNavigate}
+                />
+              )}
+          {inlineEdit?.relationsEditor
+            ? inlineEdit.relationsEditor
+            : radarContext && (
+                <RelationsSection
+                  entry={radarContext.entry}
+                  relations={radarContext.relations}
+                  data={radarContext.data}
+                  onNavigate={radarContext.onNavigate}
+                />
+              )}
           <MovementTimeline events={events} />
           {initiativesNode}
           {peerRefsNode}
@@ -785,6 +818,8 @@ function PeopleEditor({
               gap: "var(--space-2)",
               marginBottom: "var(--space-2)",
               alignItems: "center",
+              flexWrap: "wrap",
+              minWidth: 0,
             }}
           >
             <label
@@ -796,6 +831,7 @@ function PeopleEditor({
               value={linkRole}
               onChange={(e) => setLinkRole(e.target.value as PersonLinkRole)}
               style={{
+                flexShrink: 0,
                 padding: "4px 8px",
                 border: "1px solid var(--color-border)",
                 borderRadius: "var(--radius-sm)",
@@ -814,11 +850,13 @@ function PeopleEditor({
               value={search}
               onChange={(e) => void handleSearch(e.target.value)}
               style={{
-                flex: 1,
+                flex: "1 1 120px",
+                minWidth: 0,
                 padding: "4px 8px",
                 border: "1px solid var(--color-border)",
                 borderRadius: "var(--radius-sm)",
                 fontSize: "12px",
+                boxSizing: "border-box",
               }}
               aria-label="Search people"
             />
@@ -1069,6 +1107,7 @@ function PeopleEditor({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
+                    gap: 8,
                     padding: "4px 8px",
                     border: "1px solid var(--color-border)",
                     borderRadius: "var(--radius-sm)",
@@ -1076,7 +1115,14 @@ function PeopleEditor({
                     fontSize: "12px",
                   }}
                 >
-                  <span>
+                  <span
+                    style={{
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {p.full_name}
                     <span style={{ color: "var(--color-muted-text)" }}>
                       {" "}
@@ -1087,6 +1133,7 @@ function PeopleEditor({
                     type="button"
                     onClick={() => void handleLink(p.id)}
                     style={{
+                      flexShrink: 0,
                       background: "var(--color-brand-dark-blue)",
                       color: "var(--color-white)",
                       border: "none",
@@ -1223,6 +1270,179 @@ function relationGroupLabel(
   if (t === "hinderedby") return isOutgoing ? "Hindered By" : "Hinders";
   if (t === "relatesto") return "Relates To";
   return relationType;
+}
+
+function PartOfSection({
+  detail,
+  data,
+  onNavigate,
+}: {
+  detail: TopicDetailNested;
+  data: RadarData;
+  onNavigate: (entry: RadarEntry) => void;
+}) {
+  const ancestors = detail.group_ancestors ?? [];
+  const children = detail.group_children ?? [];
+  const siblings = detail.group_siblings ?? [];
+  if (ancestors.length === 0 && children.length === 0 && siblings.length === 0) {
+    return null;
+  }
+
+  const linkStyle: React.CSSProperties = {
+    background: "none",
+    border: "none",
+    padding: 0,
+    cursor: "pointer",
+    fontFamily: "var(--font-family)",
+    fontSize: "var(--font-size-body)",
+    color: "var(--color-dark-blue)",
+    textAlign: "left",
+    textDecoration: "underline",
+    textUnderlineOffset: "2px",
+    textDecorationColor:
+      "color-mix(in srgb, var(--color-dark-blue) 30%, transparent)",
+  };
+
+  function navTo(topicId: string) {
+    const target = data.entries.find((e) => e.topic_id === topicId);
+    if (target) onNavigate(target);
+  }
+
+  function briefNode(b: {
+    topic_id: string;
+    canonical_name: string;
+  }): React.ReactNode {
+    const target = data.entries.find((e) => e.topic_id === b.topic_id);
+    if (!target) {
+      // Pure-label group with no radar entry to open — render as plain text.
+      return (
+        <span style={{ color: "var(--color-dark-text)" }}>
+          {b.canonical_name}
+        </span>
+      );
+    }
+    return (
+      <button
+        type="button"
+        style={linkStyle}
+        onClick={() => navTo(b.topic_id)}
+      >
+        {b.canonical_name}
+      </button>
+    );
+  }
+
+  return (
+    <section style={{ marginBottom: "var(--space-5)" }}>
+      <SectionHeading>Part of</SectionHeading>
+      {ancestors.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "var(--space-1)",
+            marginBottom:
+              children.length > 0 || siblings.length > 0
+                ? "var(--space-3)"
+                : 0,
+          }}
+        >
+          {ancestors.map((a, i) => (
+            <span
+              key={a.topic_id}
+              style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-1)" }}
+            >
+              {briefNode(a)}
+              {i < ancestors.length - 1 && (
+                <span style={{ color: "var(--color-muted-text)" }}>▸</span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {(children.length > 0 || siblings.length > 0) && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--space-3)",
+          }}
+        >
+          {children.length > 0 && (
+            <div
+              style={{
+                borderLeft: "2px solid var(--color-dark-blue)",
+                paddingLeft: "var(--space-4)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: "var(--font-weight-bold)",
+                  color: "var(--color-dark-blue)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                  marginBottom: "var(--space-1)",
+                }}
+              >
+                Subgroups
+              </div>
+              <ul
+                style={{
+                  listStyle: "none",
+                  margin: 0,
+                  padding: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "2px",
+                }}
+              >
+                {children.map((c) => (
+                  <li key={c.topic_id}>{briefNode(c)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {siblings.length > 0 && (
+            <div
+              style={{
+                borderLeft: "2px solid var(--color-muted-text)",
+                paddingLeft: "var(--space-4)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: "var(--font-weight-bold)",
+                  color: "var(--color-muted-text)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                  marginBottom: "var(--space-1)",
+                }}
+              >
+                Related in group
+              </div>
+              <ul
+                style={{
+                  listStyle: "none",
+                  margin: 0,
+                  padding: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "2px",
+                }}
+              >
+                {siblings.map((s) => (
+                  <li key={s.topic_id}>{briefNode(s)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function RelationsSection({

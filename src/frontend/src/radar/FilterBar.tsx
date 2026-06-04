@@ -52,8 +52,8 @@ export function FilterBar({ data, filters, onChange }: Props) {
       hasPeerRefs: null,
       timeToMainstream: [],
       personIds: [],
-      candidatesOnly: false,
       visibility: "all",
+      groupId: null,
     });
   }
 

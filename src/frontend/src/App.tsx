@@ -18,11 +18,13 @@ import { CyclesPage } from "./manage/CyclesPage";
 import { ApiPage } from "./manage/ApiPage";
 import { SettingsPage } from "./manage/SettingsPage";
 import { SegmentsPage } from "./manage/SegmentsPage";
+import { GroupsPage } from "./manage/GroupsPage";
 import { PersonsPage } from "./manage/PersonsPage";
 import { UsersPage } from "./manage/UsersPage";
 import { VisibilityPage } from "./manage/VisibilityPage";
 import { BackupPage } from "./manage/BackupPage";
 import { ImportPage } from "./manage/ImportPage";
+import { GuidePage } from "./guide/GuidePage";
 
 /**
  * Routes wrapper that resets the route-level ErrorBoundary on navigation —
@@ -38,6 +40,7 @@ function RoutedContent() {
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/radar" element={<RadarPage />} />
         <Route path="/radar/:slug" element={<RadarPage />} />
+        <Route path="/guide" element={<GuidePage />} />
         <Route
           path="/list"
           element={
@@ -72,6 +75,7 @@ function RoutedContent() {
               </ProtectedRoute>
             }
           />
+          <Route path="groups" element={<GroupsPage />} />
           <Route path="persons" element={<PersonsPage />} />
           <Route
             path="users"

@@ -42,6 +42,8 @@ function filtersFromParams(
   const strategicRelevance = params.getAll("sr");
   const minTrlRaw = params.get("min_trl");
   const minTrl = minTrlRaw ? Number(minTrlRaw) : null;
+  const maxTrlRaw = params.get("max_trl");
+  const maxTrl = maxTrlRaw ? Number(maxTrlRaw) : null;
   const rawStatuses = params.getAll("status") as RegistryStatusName[];
   const registryStatuses = rawStatuses.filter((s) =>
     REGISTRY_STATUS_VALUES.includes(s),
@@ -58,6 +60,7 @@ function filtersFromParams(
     search,
     strategicRelevance,
     minTrl: minTrl != null && Number.isFinite(minTrl) ? minTrl : null,
+    maxTrl: maxTrl != null && Number.isFinite(maxTrl) ? maxTrl : null,
     registryStatuses:
       registryStatuses.length > 0
         ? registryStatuses
@@ -72,7 +75,6 @@ function filtersFromParams(
       hasPeerParam === "1" ? true : hasPeerParam === "0" ? false : null,
     timeToMainstream: ttmParam,
     personIds,
-    candidatesOnly: params.get("candidates") === "1",
     visibility:
       visParam === "private"
         ? "private"
@@ -81,6 +83,7 @@ function filtersFromParams(
           : isWriter
             ? "public"
             : "all",
+    groupId: params.get("group"),
   };
 }
 
@@ -92,6 +95,7 @@ function filtersToParams(filters: FilterState): URLSearchParams {
   if (filters.search) p.set("search", filters.search);
   filters.strategicRelevance.forEach((s) => p.append("sr", s));
   if (filters.minTrl != null) p.set("min_trl", String(filters.minTrl));
+  if (filters.maxTrl != null) p.set("max_trl", String(filters.maxTrl));
   filters.registryStatuses.forEach((s) => p.append("status", s));
   if (filters.hasFactsheet === true) p.set("has_factsheet", "1");
   if (filters.hasFactsheet === false) p.set("has_factsheet", "0");
@@ -99,9 +103,9 @@ function filtersToParams(filters: FilterState): URLSearchParams {
   if (filters.hasPeerRefs === false) p.set("has_peer_refs", "0");
   filters.timeToMainstream.forEach((t) => p.append("ttm", t));
   filters.personIds.forEach((id) => p.append("person", id));
-  if (filters.candidatesOnly) p.set("candidates", "1");
   if (filters.visibility === "private") p.set("vis", "private");
   else if (filters.visibility === "all") p.set("vis", "all");
+  if (filters.groupId) p.set("group", filters.groupId);
   return p;
 }
 
@@ -160,30 +164,20 @@ export function ListPage() {
   const reloadRadar = useCallback(() => {
     const loader = historicalCycleId
       ? fetchHistoricalRadar(historicalCycleId)
-      : fetchCurrentRadar(
-          undefined,
-          undefined,
-          REGISTRY_STATUS_VALUES,
-          isWriter,
-        );
+      : fetchCurrentRadar(undefined, undefined, REGISTRY_STATUS_VALUES);
     loader
       .then((d) => {
         setData(d);
       })
       .catch(() => undefined);
-  }, [isWriter, historicalCycleId]);
+  }, [historicalCycleId]);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     const loader = historicalCycleId
       ? fetchHistoricalRadar(historicalCycleId)
-      : fetchCurrentRadar(
-          undefined,
-          undefined,
-          REGISTRY_STATUS_VALUES,
-          isWriter,
-        );
+      : fetchCurrentRadar(undefined, undefined, REGISTRY_STATUS_VALUES);
     loader
       .then((d) => {
         setData(d);
@@ -192,7 +186,7 @@ export function ListPage() {
         setError(e instanceof Error ? e.message : "Failed to load radar data"),
       )
       .finally(() => setLoading(false));
-  }, [isWriter, historicalCycleId]);
+  }, [historicalCycleId]);
 
   useEffect(() => {
     if (!data) return;

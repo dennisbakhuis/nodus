@@ -38,6 +38,7 @@ import type {
   InitiativeCreate,
   InitiativeUpdate,
   InitiativeStatus,
+  GroupTreeNode,
 } from "../api/generated/types.gen";
 
 export type {
@@ -80,6 +81,7 @@ export type {
   InitiativeCreate,
   InitiativeUpdate,
   InitiativeStatus,
+  GroupTreeNode,
 };
 
 export const INITIATIVE_STATUSES: InitiativeStatus[] = [

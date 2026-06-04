@@ -27,7 +27,97 @@ import {
   reorderSegments,
   updateSegment,
 } from "../manage/api";
-import type { SegmentAdmin } from "../manage/types";
+import type { GroupTreeNode, SegmentAdmin } from "../manage/types";
+import { listGroupsTree } from "../api/topics";
+
+/** Flatten a group forest into depth-tagged rows for indented rendering. */
+function flattenGroupTree(
+  nodes: GroupTreeNode[],
+  depth = 0,
+): { node: GroupTreeNode; depth: number }[] {
+  const out: { node: GroupTreeNode; depth: number }[] = [];
+  for (const node of nodes) {
+    out.push({ node, depth });
+    if (node.children && node.children.length > 0) {
+      out.push(...flattenGroupTree(node.children, depth + 1));
+    }
+  }
+  return out;
+}
+
+/** Per-depth accent colours for the group tree (guide lines, disclosure). */
+const GROUP_DEPTH_COLORS = ["#2d8bc9", "#7c3aed", "#1b7b34", "#e08a00"];
+
+function groupDepthColor(depth: number): string {
+  return GROUP_DEPTH_COLORS[depth % GROUP_DEPTH_COLORS.length] as string;
+}
+
+const TREE_ROW_H = 24;
+const TREE_CELL_W = 18;
+const TREE_LINE = "var(--color-ring-boundary)";
+
+/** A full-height vertical guide line (ancestor column that continues below). */
+function TreeVertical({ show }: { show: boolean }) {
+  return (
+    <div
+      style={{ position: "relative", width: TREE_CELL_W, flex: "0 0 auto" }}
+    >
+      {show && (
+        <div
+          style={{
+            position: "absolute",
+            left: TREE_CELL_W / 2,
+            top: 0,
+            bottom: 0,
+            borderLeft: `1.5px solid ${TREE_LINE}`,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The ├─ (tee) or └─ (corner) connector joining a node to its parent. */
+function TreeElbow({ last, color }: { last: boolean; color: string }) {
+  return (
+    <div
+      style={{ position: "relative", width: TREE_CELL_W, flex: "0 0 auto" }}
+    >
+      {/* vertical from the top down to the middle (always) */}
+      <div
+        style={{
+          position: "absolute",
+          left: TREE_CELL_W / 2,
+          top: 0,
+          height: TREE_ROW_H / 2,
+          borderLeft: `1.5px solid ${TREE_LINE}`,
+        }}
+      />
+      {/* vertical from middle to bottom only when more siblings follow (tee) */}
+      {!last && (
+        <div
+          style={{
+            position: "absolute",
+            left: TREE_CELL_W / 2,
+            top: TREE_ROW_H / 2,
+            bottom: 0,
+            borderLeft: `1.5px solid ${TREE_LINE}`,
+          }}
+        />
+      )}
+      {/* horizontal stub reaching the node, tinted by depth */}
+      <div
+        style={{
+          position: "absolute",
+          left: TREE_CELL_W / 2,
+          width: TREE_CELL_W / 2,
+          top: TREE_ROW_H / 2,
+          borderTop: `1.5px solid ${color}`,
+        }}
+      />
+    </div>
+  );
+}
 
 const RING_NAMES: RingName[] = ["Invest", "Pilot", "Explore", "Monitor"];
 const MOVEMENT_OPTIONS: { value: MovementStatus; label: string }[] = [
@@ -41,7 +131,8 @@ const STRATEGIC_RELEVANCE_OPTIONS: { value: string; label: string }[] = [
   { value: "Medium", label: "Medium" },
   { value: "Low", label: "Low" },
 ];
-const TRL_THRESHOLDS = [1, 4, 7, 9] as const;
+const TRL_MIN = 1;
+const TRL_MAX = 9;
 const REGISTRY_STATUS_OPTIONS: { value: RegistryStatusName; label: string }[] =
   [
     { value: "On Radar", label: "On Radar" },
@@ -49,6 +140,24 @@ const REGISTRY_STATUS_OPTIONS: { value: RegistryStatusName; label: string }[] =
     { value: "Archive", label: "Archive" },
   ];
 const TIME_TO_MAINSTREAM_OPTIONS = ["0-2 yr", "2-5 yr", "5-7 yr", "7-10 yr"];
+
+/** Map the stored (contiguous) time-to-mainstream selection back to slider
+ * handle indices. An empty selection means the full range. */
+function timeRangeFromSelection(sel: string[]): [number, number] {
+  const full: [number, number] = [0, TIME_TO_MAINSTREAM_OPTIONS.length - 1];
+  if (sel.length === 0) return full;
+  const idx = sel
+    .map((s) => TIME_TO_MAINSTREAM_OPTIONS.indexOf(s))
+    .filter((i) => i >= 0);
+  if (idx.length === 0) return full;
+  return [Math.min(...idx), Math.max(...idx)];
+}
+
+/** "0-2 yr – 5-7 yr" readout for the current time-to-mainstream selection. */
+function timeRangeLabel(sel: string[]): string {
+  const [lo, hi] = timeRangeFromSelection(sel);
+  return `${TIME_TO_MAINSTREAM_OPTIONS[lo]} – ${TIME_TO_MAINSTREAM_OPTIONS[hi]}`;
+}
 
 type Props = {
   variant?: "radar" | "list";
@@ -104,6 +213,172 @@ export function Sidebar({
     { min: 180, max: 420, initial: 200 },
   );
   const [segmentEditMode, setSegmentEditMode] = useState(false);
+  const [groupTree, setGroupTree] = useState<GroupTreeNode[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
+  // Start fully folded — level 1 (roots only) is the default, so its button
+  // shows as selected from the first render.
+  const [activeExpandLevel, setActiveExpandLevel] = useState<number | null>(1);
+  useEffect(() => {
+    let cancelled = false;
+    listGroupsTree()
+      .then((tree) => {
+        if (!cancelled) setGroupTree(tree);
+      })
+      .catch(() => {
+        /* grouping is optional; ignore fetch errors */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data]);
+  const groupRows = flattenGroupTree(groupTree);
+  const maxGroupDepth = groupRows.reduce((m, r) => Math.max(m, r.depth), 0);
+
+  function toggleGroupExpanded(id: string) {
+    // Manual expand/collapse no longer matches a clean depth level.
+    setActiveExpandLevel(null);
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** Expand all nodes shallower than `level` (level 1 = roots only / fully folded). */
+  function expandGroupsToLevel(level: number) {
+    const ids = new Set<string>();
+    for (const { node, depth } of groupRows) {
+      if (depth < level - 1) ids.add(node.topic_id);
+    }
+    setExpandedGroups(ids);
+    setActiveExpandLevel(level);
+  }
+
+  function renderGroupNode(
+    node: GroupTreeNode,
+    depth: number,
+    prefixes: boolean[],
+    isLast: boolean,
+  ): React.ReactNode {
+    const hasChildren = (node.children?.length ?? 0) > 0;
+    const expanded = expandedGroups.has(node.topic_id);
+    const active = filters.groupId === node.topic_id;
+    const hovered = hoveredGroupId === node.topic_id;
+    const color = groupDepthColor(depth);
+    // Children inherit this node's column as a vertical guide only when more
+    // siblings follow below it. Roots contribute no left column.
+    const childPrefixes = depth === 0 ? [] : [...prefixes, !isLast];
+    // Hover stays visible on selected rows too: darken the active fill,
+    // tint an inactive row with the depth colour.
+    const rowBg = active
+      ? hovered
+        ? `color-mix(in srgb, ${color} 82%, black)`
+        : color
+      : hovered
+        ? `color-mix(in srgb, ${color} 14%, var(--color-white))`
+        : "transparent";
+    return (
+      <div key={node.topic_id}>
+        <div
+          onMouseEnter={() => setHoveredGroupId(node.topic_id)}
+          onMouseLeave={() =>
+            setHoveredGroupId((cur) =>
+              cur === node.topic_id ? null : cur,
+            )
+          }
+          style={{
+            display: "flex",
+            alignItems: "stretch",
+            minHeight: TREE_ROW_H,
+            borderRadius: "var(--radius-sm)",
+            background: rowBg,
+          }}
+        >
+          {prefixes.map((show, i) => (
+            <TreeVertical key={i} show={show} />
+          ))}
+          {depth > 0 && <TreeElbow last={isLast} color={color} />}
+          <button
+            type="button"
+            aria-label={
+              hasChildren ? (expanded ? "Collapse group" : "Expand group") : undefined
+            }
+            disabled={!hasChildren}
+            onClick={() => hasChildren && toggleGroupExpanded(node.topic_id)}
+            style={{
+              flex: "0 0 auto",
+              width: 20,
+              border: "none",
+              background: "transparent",
+              cursor: hasChildren ? "pointer" : "default",
+              color: active
+                ? "var(--color-white)"
+                : hasChildren
+                  ? color
+                  : "transparent",
+              fontSize: 13,
+              lineHeight: 1,
+              padding: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {hasChildren ? (expanded ? "▾" : "▸") : "•"}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onFiltersChange({
+                ...filters,
+                groupId: active ? null : node.topic_id,
+              })
+            }
+            title={
+              node.on_radar
+                ? `${node.canonical_name} (on radar)`
+                : `${node.canonical_name} (label)`
+            }
+            style={{
+              flex: 1,
+              minWidth: 0,
+              textAlign: "left",
+              padding: "2px 4px",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontFamily: "var(--font-family)",
+              fontSize: "var(--font-size-sm)",
+              fontWeight: active
+                ? "var(--font-weight-bold)"
+                : "var(--font-weight-medium)",
+              color: active ? "var(--color-white)" : "var(--color-text)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {node.canonical_name}
+            {node.on_radar ? "" : " ·"}
+          </button>
+        </div>
+        {hasChildren &&
+          expanded &&
+          node.children!.map((c, j) =>
+            renderGroupNode(
+              c,
+              depth + 1,
+              childPrefixes,
+              j === node.children!.length - 1,
+            ),
+          )}
+      </div>
+    );
+  }
   const showColorPicker =
     !isList && colorMode !== undefined && onColorModeChange !== undefined;
   const showShapePicker =
@@ -138,10 +413,11 @@ export function Sidebar({
     onFiltersChange({ ...filters, strategicRelevance: next });
   }
 
-  function setMinTrl(value: number | null) {
+  function setTrlRange(lo: number, hi: number) {
     onFiltersChange({
       ...filters,
-      minTrl: filters.minTrl === value ? null : value,
+      minTrl: lo <= TRL_MIN ? null : lo,
+      maxTrl: hi >= TRL_MAX ? null : hi,
     });
   }
 
@@ -173,10 +449,11 @@ export function Sidebar({
     });
   }
 
-  function toggleTimeToMainstream(value: string) {
-    const next = filters.timeToMainstream.includes(value)
-      ? filters.timeToMainstream.filter((s) => s !== value)
-      : [...filters.timeToMainstream, value];
+  function setTimeRange(lo: number, hi: number) {
+    const next =
+      lo <= 0 && hi >= TIME_TO_MAINSTREAM_OPTIONS.length - 1
+        ? []
+        : TIME_TO_MAINSTREAM_OPTIONS.slice(lo, hi + 1);
     onFiltersChange({ ...filters, timeToMainstream: next });
   }
 
@@ -188,13 +465,14 @@ export function Sidebar({
       search: "",
       strategicRelevance: [],
       minTrl: null,
+      maxTrl: null,
       registryStatuses: ["On Radar"],
       hasFactsheet: null,
       hasPeerRefs: null,
       timeToMainstream: [],
       personIds: [],
-      candidatesOnly: false,
       visibility: isList && isWriter ? "public" : "all",
+      groupId: null,
     });
     onSearchChange("");
     if (showColorPicker && colorMode !== "segment") {
@@ -218,6 +496,7 @@ export function Sidebar({
     filters.movements.length > 0 ||
     filters.strategicRelevance.length > 0 ||
     filters.minTrl != null ||
+    filters.maxTrl != null ||
     filters.hasFactsheet !== null ||
     filters.hasPeerRefs !== null ||
     filters.timeToMainstream.length > 0 ||
@@ -225,10 +504,10 @@ export function Sidebar({
     (isList &&
       (filters.registryStatuses.length !== 1 ||
         filters.registryStatuses[0] !== "On Radar")) ||
-    (isList && filters.candidatesOnly) ||
     (isList && filters.visibility !== defaultVisibility) ||
     (showColorPicker && colorMode !== "segment") ||
     (showShapePicker && shapeMode !== "dot") ||
+    filters.groupId != null ||
     search.trim().length > 0;
 
   return (
@@ -314,14 +593,6 @@ export function Sidebar({
           />
         )}
 
-        {!isList && <Hr />}
-
-        <SectionHeader
-          label="Filters"
-          onReset={hasFilters ? clearAll : undefined}
-          resetLabel="Reset all filters"
-        />
-
         {/* ── Search ── */}
         <SearchBox
           entries={entries}
@@ -330,9 +601,13 @@ export function Sidebar({
           onSelect={onSearchSelect}
         />
 
+        <Hr />
+        <FiltersHeader
+          onReset={hasFilters ? clearAll : undefined}
+        />
+
         {showColorPicker && (
           <>
-            <Hr />
             <SectionHeader
               label="Color dots by"
               onReset={
@@ -394,8 +669,8 @@ export function Sidebar({
 
         {isList && (
           <>
-            <Hr />
-            {/* ── Registry Status ── */}
+            {/* ── Registry Status (first list filter — no divider directly
+                 under the Filters label) ── */}
             <SectionHeader
               label="Registry Status"
               onReset={
@@ -429,37 +704,9 @@ export function Sidebar({
           </>
         )}
 
-        {/* Writer-only intake / visibility filters — list view only. */}
+        {/* Writer-only visibility filter — list view only. */}
         {isList && isWriter && (
           <>
-            <Hr />
-            <SectionHeader
-              label="Candidates"
-              onReset={
-                filters.candidatesOnly
-                  ? () => onFiltersChange({ ...filters, candidatesOnly: false })
-                  : undefined
-              }
-              resetLabel="Reset candidates filter"
-            />
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "var(--space-1)",
-              }}
-            >
-              <Chip
-                active={filters.candidatesOnly}
-                onClick={() =>
-                  onFiltersChange({
-                    ...filters,
-                    candidatesOnly: !filters.candidatesOnly,
-                  })
-                }
-                label="Candidates only"
-              />
-            </div>
             <Hr />
             <SectionHeader
               label="Visibility"
@@ -592,102 +839,45 @@ export function Sidebar({
           ))}
         </div>
 
+        <Hr />
+        {/* ── Strategic Relevance ── */}
+        <SectionHeader
+          label="Strategic Relevance"
+          onReset={
+            filters.strategicRelevance.length > 0
+              ? () => onFiltersChange({ ...filters, strategicRelevance: [] })
+              : undefined
+          }
+          resetLabel="Reset strategic relevance filter"
+        />
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "var(--space-1)",
+          }}
+        >
+          {STRATEGIC_RELEVANCE_OPTIONS.map(({ value, label }) => (
+            <Chip
+              key={value}
+              active={filters.strategicRelevance.includes(value)}
+              onClick={() => toggleStrategicRelevance(value)}
+              label={label}
+            />
+          ))}
+        </div>
+
+        <Hr />
+        <PersonFilter
+          selectedIds={filters.personIds ?? []}
+          onToggle={togglePerson}
+          onClear={() => onFiltersChange({ ...filters, personIds: [] })}
+        />
+
         {isList && (
           <>
             <Hr />
-            {/* ── Strategic Relevance ── */}
-            <SectionHeader
-              label="Strategic Relevance"
-              onReset={
-                filters.strategicRelevance.length > 0
-                  ? () =>
-                      onFiltersChange({ ...filters, strategicRelevance: [] })
-                  : undefined
-              }
-              resetLabel="Reset strategic relevance filter"
-            />
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "var(--space-1)",
-              }}
-            >
-              {STRATEGIC_RELEVANCE_OPTIONS.map(({ value, label }) => (
-                <Chip
-                  key={value}
-                  active={filters.strategicRelevance.includes(value)}
-                  onClick={() => toggleStrategicRelevance(value)}
-                  label={label}
-                />
-              ))}
-            </div>
-
-            <Hr />
-            {/* ── Min TRL ── */}
-            <SectionHeader
-              label="Min TRL"
-              onReset={
-                filters.minTrl != null
-                  ? () => onFiltersChange({ ...filters, minTrl: null })
-                  : undefined
-              }
-              resetLabel="Reset minimum TRL filter"
-            />
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "var(--space-1)",
-              }}
-            >
-              {TRL_THRESHOLDS.map((t) => (
-                <Chip
-                  key={t}
-                  active={filters.minTrl === t}
-                  onClick={() => setMinTrl(t)}
-                  label={`${t}+`}
-                />
-              ))}
-            </div>
-
-            <Hr />
-            {/* ── Time to mainstream ── */}
-            <SectionHeader
-              label="Time to mainstream"
-              onReset={
-                filters.timeToMainstream.length > 0
-                  ? () => onFiltersChange({ ...filters, timeToMainstream: [] })
-                  : undefined
-              }
-              resetLabel="Reset time-to-mainstream filter"
-            />
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "var(--space-1)",
-              }}
-            >
-              {TIME_TO_MAINSTREAM_OPTIONS.map((label) => (
-                <Chip
-                  key={label}
-                  active={filters.timeToMainstream.includes(label)}
-                  onClick={() => toggleTimeToMainstream(label)}
-                  label={label}
-                />
-              ))}
-            </div>
-
-            <Hr />
-            <PersonFilter
-              selectedIds={filters.personIds ?? []}
-              onToggle={togglePerson}
-              onClear={() => onFiltersChange({ ...filters, personIds: [] })}
-            />
-
-            <Hr />
-            {/* ── Data completeness (tri-state toggles) ── */}
+            {/* ── Data completeness (tri-state toggles) — list only ── */}
             <SectionHeader
               label="Completeness"
               onReset={
@@ -722,11 +912,233 @@ export function Sidebar({
             </div>
           </>
         )}
+
+        <Hr />
+        {/* ── TRL range (dual-handle slider) ── */}
+        <SectionHeader
+          label={`TRL range (${filters.minTrl ?? TRL_MIN} – ${filters.maxTrl ?? TRL_MAX})`}
+          onReset={
+            filters.minTrl != null || filters.maxTrl != null
+              ? () =>
+                  onFiltersChange({ ...filters, minTrl: null, maxTrl: null })
+              : undefined
+          }
+          resetLabel="Reset TRL range filter"
+        />
+        <RangeSlider
+          min={TRL_MIN}
+          max={TRL_MAX}
+          lo={filters.minTrl ?? TRL_MIN}
+          hi={filters.maxTrl ?? TRL_MAX}
+          onChange={setTrlRange}
+          ariaLabel="TRL"
+        />
+
+        <Hr />
+        {/* ── Time to mainstream (dual-handle slider) ── */}
+        <SectionHeader
+          label={`Time to mainstream (${timeRangeLabel(filters.timeToMainstream)})`}
+          onReset={
+            filters.timeToMainstream.length > 0
+              ? () => onFiltersChange({ ...filters, timeToMainstream: [] })
+              : undefined
+          }
+          resetLabel="Reset time-to-mainstream filter"
+        />
+        <RangeSlider
+          min={0}
+          max={TIME_TO_MAINSTREAM_OPTIONS.length - 1}
+          lo={timeRangeFromSelection(filters.timeToMainstream)[0]}
+          hi={timeRangeFromSelection(filters.timeToMainstream)[1]}
+          onChange={setTimeRange}
+          ariaLabel="Time to mainstream"
+        />
+
+        <Hr />
+        {/* ── Group filter (collapsible tree) — kept last ── */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "var(--space-2)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <SectionLabel>Group</SectionLabel>
+            {maxGroupDepth > 0 && (
+              <span
+                style={{ display: "flex", gap: 2, alignItems: "center" }}
+                title="Unfold the tree up to this level"
+              >
+                {Array.from(
+                  { length: Math.min(3, maxGroupDepth + 1) },
+                  (_, i) => i + 1,
+                ).map((level) => {
+                  const levelColor = groupDepthColor(level - 1);
+                  const levelActive = activeExpandLevel === level;
+                  return (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => expandGroupsToLevel(level)}
+                      aria-label={`Expand to level ${level}`}
+                      aria-pressed={levelActive}
+                      title={`Unfold to level ${level}`}
+                      style={{
+                        width: 18,
+                        height: 18,
+                        padding: 0,
+                        border: `1px solid ${levelColor}`,
+                        borderRadius: 4,
+                        background: levelActive
+                          ? levelColor
+                          : "var(--color-white)",
+                        color: levelActive
+                          ? "var(--color-white)"
+                          : levelColor,
+                        fontSize: 10,
+                        fontWeight: "var(--font-weight-bold)",
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        fontFamily: "var(--font-family)",
+                      }}
+                    >
+                      {level}
+                    </button>
+                  );
+                })}
+              </span>
+            )}
+          </div>
+          {filters.groupId != null && (
+            <ResetButton
+              onClick={() => onFiltersChange({ ...filters, groupId: null })}
+              aria-label="Reset group filter"
+            />
+          )}
+        </div>
+        {groupTree.length === 0 ? (
+          <div
+            style={{
+              fontSize: "var(--font-size-sm)",
+              color: "var(--color-muted-text)",
+              fontStyle: "italic",
+              padding: "2px 0",
+            }}
+          >
+            No groups have been defined.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              marginTop: "var(--space-1)",
+            }}
+          >
+            {groupTree.map((node, j) =>
+              renderGroupNode(node, 0, [], j === groupTree.length - 1),
+            )}
+          </div>
+        )}
       </div>
       <NodusFooterLink />
 
       <ResizeHandle onPointerDown={onPointerDown} onDoubleClick={reset} />
     </aside>
+  );
+}
+
+/**
+ * Dual-handle range slider built from two overlaid native range inputs (each a
+ * real, keyboard-accessible thumb). Track clicks pass through (pointer-events
+ * only on the thumbs) so both handles stay grabbable.
+ */
+function RangeSlider({
+  min,
+  max,
+  lo,
+  hi,
+  onChange,
+  ariaLabel,
+}: {
+  min: number;
+  max: number;
+  lo: number;
+  hi: number;
+  onChange: (lo: number, hi: number) => void;
+  ariaLabel: string;
+}) {
+  const span = max - min || 1;
+  const pct = (v: number) => ((v - min) / span) * 100;
+  return (
+    <div className="nodus-range">
+      <div className="nodus-range__rail" />
+      <div
+        className="nodus-range__fill"
+        style={{ left: `${pct(lo)}%`, right: `${100 - pct(hi)}%` }}
+      />
+      <input
+        type="range"
+        className="nodus-range__input"
+        min={min}
+        max={max}
+        step={1}
+        value={lo}
+        aria-label={`${ariaLabel} minimum`}
+        onChange={(e) => onChange(Math.min(Number(e.target.value), hi), hi)}
+      />
+      <input
+        type="range"
+        className="nodus-range__input"
+        min={min}
+        max={max}
+        step={1}
+        value={hi}
+        aria-label={`${ariaLabel} maximum`}
+        onChange={(e) => onChange(lo, Math.max(Number(e.target.value), lo))}
+      />
+      <style>{`
+        .nodus-range { position: relative; height: 20px; flex: 0 0 20px; padding: 0 1px; }
+        .nodus-range__rail { position: absolute; left: 0; right: 0; top: 8px; height: 4px; border-radius: 2px; background: var(--color-ring-boundary); }
+        .nodus-range__fill { position: absolute; top: 8px; height: 4px; border-radius: 2px; background: var(--color-brand-bright-blue); }
+        .nodus-range__input { position: absolute; left: 0; right: 0; top: 2px; width: 100%; height: 16px; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; pointer-events: none; }
+        .nodus-range__input:focus { outline: none; }
+        .nodus-range__input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; pointer-events: auto; width: 14px; height: 14px; border-radius: 50%; background: var(--color-white); border: 2px solid var(--color-brand-bright-blue); cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .nodus-range__input::-moz-range-thumb { pointer-events: auto; width: 14px; height: 14px; border-radius: 50%; background: var(--color-white); border: 2px solid var(--color-brand-bright-blue); cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .nodus-range__input::-webkit-slider-runnable-track { background: transparent; border: none; }
+        .nodus-range__input::-moz-range-track { background: transparent; border: none; }
+        .nodus-range__input:focus::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-bright-blue) 35%, transparent); }
+      `}</style>
+    </div>
+  );
+}
+
+function FiltersHeader({ onReset }: { onReset?: () => void }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "var(--space-2)",
+        minHeight: 18,
+      }}
+    >
+      <span
+        style={{
+          fontSize: "13px",
+          fontWeight: "var(--font-weight-bold)",
+          color: "var(--color-dark-text)",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+        }}
+      >
+        Filters
+      </span>
+      {onReset && <ResetButton onClick={onReset} aria-label="Reset all filters" />}
+    </div>
   );
 }
 
@@ -924,6 +1336,10 @@ function SideButton({
       aria-pressed={active}
       style={{
         ...zoomCellBaseStyle,
+        // Fixed square so the buttons never stretch when the sidebar widens —
+        // they stay at the smallest size and the row stays left-aligned.
+        flex: "0 0 auto",
+        width: ZOOM_CELL_HEIGHT,
         background: active
           ? "var(--color-active-filter)"
           : "var(--color-white)",

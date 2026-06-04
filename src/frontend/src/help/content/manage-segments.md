@@ -1,25 +1,27 @@
 # Segments
 
-Segments are the angular slices of the radar. Each technology belongs to
+Segments are the slices (quadrants) of the radar. Each technology belongs to
 exactly one segment.
 
 ## Adding a segment
 
-Click **New segment**, enter a name (the slug is generated automatically),
-and pick a theme. Themes control the dot colour and segment background.
+Click **Add segment**, enter a **name** (the slug is generated automatically),
+and pick a **theme** — it controls the dot colour and segment background.
 
 ## Reordering
 
-Drag a segment to change its position on the radar. The leftmost segment
-appears at the top of the circle; segments are laid out clockwise.
+Use the **↑ / ↓** arrows in each row to change a segment's order (the first
+appears at the top of the circle, then clockwise). There is no drag-and-drop.
 
-## Renaming and deleting
+## Renaming and theming
 
-- **Rename** — safe; the slug is preserved so existing links keep working.
-- **Delete** — only allowed for segments with no technologies attached.
-  Re-assign or archive the technologies first.
+- **Rename** — click the segment's name, edit, and press Enter. The slug is kept
+  so existing links work.
+- **Theme** — change it any time from the theme dropdown in the row.
 
-## Themes
+## Status and deleting
 
-The available themes are defined in code; ask a developer to add a new
-theme if none of the built-ins fit your branding.
+- **Deactivate / Activate** — hide a segment from new use without losing its
+  history. You can't deactivate one that still has technologies in it.
+- **Delete** — only when no technologies use the segment (each row shows its
+  usage count); reassign or archive those first.

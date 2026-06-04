@@ -1,28 +1,40 @@
 # Users
 
-Application accounts that can sign into the radar. Each user has exactly
-one role.
+Application accounts that can sign in. Each user has one role.
 
 ## Roles
 
-| Role              | Can do                                                     |
-| ----------------- | ---------------------------------------------------------- |
-| **Public reader** | Sees only fields marked public in _Visibility_.            |
-| **Reader**        | Sees the full radar and topic detail.                      |
-| **Writer**        | Reader + add/edit topics, create cycles, manage persons.   |
-| **Admin**         | Writer + manage users, settings, segments, and visibility. |
+| Role       | Can do                                                    |
+| ---------- | --------------------------------------------------------- |
+| **Reader** | See the full radar and topic detail.                      |
+| **Writer** | Reader + add/edit technologies, cycles, groups, people.   |
+| **Admin**  | Writer + manage users, segments, visibility, and backups. |
 
-## Creating a user
+Anonymous visitors are "public readers" and see only public fields — that role
+isn't assigned to accounts.
 
-Click **New user**, enter name, email, and role. The user receives a
-temporary password (shown once — copy it before closing the dialog).
+## Adding a user
 
-## Resetting a password
+Click **Add user** and set a **username**, **role**, **first/last name**, and an
+**initial password** you type. Leave **Force password change on first login**
+ticked so they choose their own. If the name matches an existing person, you're
+offered to **link** that profile or **create a new** one.
 
-Click **Reset password** on a user row to issue a new temporary password.
-The user must change it on next sign-in.
+## Managing users
 
-## Deactivating
+- **Change role** — the dropdown in each row.
+- **Edit** — username and name.
+- **Reset password** — type a new one; the user must change it next sign-in.
+- **Deactivate / Reactivate** — block sign-in without deleting history.
+- **Delete** — permanently removes the account, its sessions, and API keys. You
+  choose whether to keep or also delete the linked person, and must unlink them
+  from any technologies first.
 
-Deactivated users keep their attribution history but cannot sign in. Use
-this instead of deleting accounts.
+Row **flags** mark **Entra** (single sign-on), **MFA** enabled, or a pending
+password reset.
+
+## Single sign-on (Entra)
+
+When Entra is enabled, those users are created and role-synced automatically from
+their group membership and are read-only here; the role → group mapping is shown
+for reference.

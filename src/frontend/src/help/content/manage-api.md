@@ -1,35 +1,35 @@
-# API access
+# API
 
-Manage API keys that allow programmatic clients to read or modify the
-radar without going through a browser sign-in.
+Read the radar programmatically and mint long-lived API keys.
+
+## Getting started
+
+The API base path is `/api`. Interactive docs are built in — **Swagger UI** at
+`/docs` and **ReDoc** at `/redoc` — and this page lists common endpoints with
+ready-to-copy `curl` and Python examples.
+
+## Authentication
+
+Send your key as a bearer token:
+
+```
+Authorization: Bearer ntr_<your-key>
+```
+
+A key inherits its owning user's role at request time. MFA does not apply to API
+keys.
 
 ## Creating a key
 
-Click **New API key**, give it a descriptive label (e.g. _CI exporter_),
-and choose an owning user. The key inherits that user's role — a key
-created for a _reader_ can read; a key for a _writer_ can also create and
-update.
+Click **Create new key** and set a **name**, optional **description**, the
+**"Acts as"** user it runs as (any active user; defaults to you), and an optional
+**expiry date**. The token is shown **once** — copy it and tick the
+acknowledgement before closing; it can't be retrieved later.
 
-The key string is shown **once** at creation. Copy it into your secret
-manager before closing the dialog. It cannot be recovered later.
+## Managing keys
 
-## Using a key
-
-Send it on every request as a header:
-
-```
-Authorization: Bearer <api-key>
-```
-
-The API base path is `/api`. See `docs/assessment-api.md` for endpoint
-documentation.
-
-## Revoking
-
-Click **Revoke** on the row to disable a key immediately. Revoking is
-irreversible; create a new key if you need it back.
-
-## Rotation
-
-Best practice: create a new key, deploy it everywhere, then revoke the old
-one. Avoid revoking before the new key is in production.
+The table lists each key's name, owner, prefix, created / last-used / expiry, and
+status. **Revoke** disables a key immediately (irreversible; confirm when asked),
+and **Show revoked** reveals revoked keys. To rotate, create a new key, deploy
+it, then revoke the old one. There is no rate limit yet, and never put a token in
+a URL query string.
