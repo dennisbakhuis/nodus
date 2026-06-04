@@ -198,6 +198,12 @@ def _apply_post_create_migrations(engine_to_use: object) -> None:
             _ensure_column(session, "technology", "movement", "movement VARCHAR")
             _ensure_column(session, "technology", "created_by_id", "created_by_id VARCHAR")
 
+        topic_rows = session.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='topic'")
+        ).fetchall()
+        if topic_rows:
+            _ensure_column(session, "topic", "parent_topic_id", "parent_topic_id VARCHAR")
+
 
 def _ensure_person_profiles(engine_to_use: object) -> None:
     """Enforce one-profile-per-account and backfill missing People profiles.

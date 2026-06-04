@@ -14,4 +14,7 @@ class Topic(SQLModel, table=True):
     canonical_name: str = Field(unique=True, index=True)
     slug: str = Field(unique=True, index=True)
     not_for_external_publication: bool = Field(default=False)
+    parent_topic_id: uuid.UUID | None = Field(
+        default=None, foreign_key="topic.id", index=True
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

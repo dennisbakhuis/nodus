@@ -86,6 +86,9 @@ function normalizeTopic(raw: TopicDetailResponse): {
     persons: (raw.persons ?? []) as unknown as TopicDetailNested["persons"],
     hero_image_url: raw.hero_image_url,
     created_by: raw.created_by ?? null,
+    group_ancestors: raw.group_ancestors ?? [],
+    group_children: raw.group_children ?? [],
+    group_siblings: raw.group_siblings ?? [],
   };
 
   return { topic, nested };

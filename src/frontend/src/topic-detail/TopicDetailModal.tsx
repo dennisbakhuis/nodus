@@ -15,6 +15,8 @@ import {
   type PublicationLink,
 } from "./TopicView";
 import { useTopicDetail } from "./useTopicDetail";
+import { HelpMarkdown } from "../help/HelpMarkdown";
+import { loadHelpContent } from "../help/loadHelpContent";
 import { useAuth } from "../shared/AuthContext";
 import { useReadOnlyRadar } from "../radar/ReadOnlyRadarContext";
 import { MovementIndicator } from "../shared/MovementIndicator";
@@ -35,6 +37,13 @@ import {
   updateTechnology,
   updateTopic,
 } from "../manage/api";
+import { listTopics } from "../api/topics";
+import { createRelation, deleteRelation } from "../api/relations";
+import {
+  ParentOptionGroups,
+  topicsToParentOptions,
+  type ParentOption,
+} from "../shared/ParentOptions";
 import type {
   AssessmentCreate,
   ImpactPotential,
@@ -46,6 +55,27 @@ import type {
   TimeToMainstream,
   TaxCreditCandidate,
 } from "../manage/types";
+
+const RELATION_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "drives", label: "Drives" },
+  { value: "driven_by", label: "Driven by" },
+  { value: "relates_to", label: "Relates to" },
+  { value: "hinders", label: "Hinders" },
+  { value: "hindered_by", label: "Hindered by" },
+];
+
+const RELATION_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  RELATION_TYPE_OPTIONS.map((o) => [o.value, o.label]),
+);
+
+type EditRelation = {
+  id?: string;
+  from_topic_id: string;
+  to_topic_id: string;
+  relation_type: string;
+  _new?: boolean;
+  _deleted?: boolean;
+};
 import { getValidTransitions } from "../manage/types";
 import { RingPlacementDialog } from "../manage/RingPlacementDialog";
 
@@ -183,6 +213,13 @@ export function TopicDetailModal({
   const [editRegistry, setEditRegistry] = useState<RegistryStatus>("On Radar");
   const [editIsPublic, setEditIsPublic] = useState<boolean>(true);
   const [allSegments, setAllSegments] = useState<SegmentAdmin[]>([]);
+  // group / parent
+  const [editParentId, setEditParentId] = useState<string>("");
+  const [groupOptions, setGroupOptions] = useState<ParentOption[]>([]);
+  // relations (working list with new/deleted flags)
+  const [editRelations, setEditRelations] = useState<EditRelation[]>([]);
+  const [newRelType, setNewRelType] = useState<string>("relates_to");
+  const [newRelTarget, setNewRelTarget] = useState<string>("");
   // alias edits
   const [editAliases, setEditAliases] = useState<
     { id?: string; name: string; source?: string | null }[]
@@ -193,6 +230,7 @@ export function TopicDetailModal({
   const [editPeerRefs, setEditPeerRefs] = useState<EditablePeerRef[]>([]);
   const [partyOptions, setPartyOptions] = useState<PartyOption[]>([]);
   // hero image — cropper modal + asset id staged for save
+  const [helpOpen, setHelpOpen] = useState(false);
   const [cropperOpen, setCropperOpen] = useState<boolean>(false);
   const [pendingHeroImageId, setPendingHeroImageId] = useState<string | null>(
     null,
@@ -235,6 +273,10 @@ export function TopicDetailModal({
   }, [isWriter, mode]);
 
   useEffect(() => {
+    if (!open) setHelpOpen(false);
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
     listSegments({})
       .then(setAllSegments)
@@ -244,6 +286,11 @@ export function TopicDetailModal({
         setPartyOptions(parties.map((p) => ({ id: p.id, name: p.name }))),
       )
       .catch(() => setPartyOptions([]));
+    // Any technology can be a parent group — list all topics, not just the
+    // ones already in the hierarchy (groups-tree). Self is excluded at render.
+    listTopics({ limit: 200 })
+      .then((tops) => setGroupOptions(topicsToParentOptions(tops)))
+      .catch(() => setGroupOptions([]));
   }, [open]);
 
   useEffect(() => {
@@ -257,6 +304,9 @@ export function TopicDetailModal({
       setEditSegmentId(topic.current_segment_id ?? "");
       setEditRegistry(topic.registry_status as RegistryStatus);
       setEditIsPublic(!topic.not_for_external_publication);
+      setEditParentId(
+        (nested.topic?.["parent_topic_id"] as string | null | undefined) ?? "",
+      );
       setEditAliases(
         nested.aliases.map((a) => ({
           id: (a.id as string | undefined) ?? undefined,
@@ -285,6 +335,26 @@ export function TopicDetailModal({
       );
     }
   }, [mode, peerRefs, partyOptions]);
+
+  useEffect(() => {
+    if (mode === "edit" && topic && radarContext) {
+      setEditRelations(
+        radarContext.relations
+          .filter(
+            (r) =>
+              r.from_topic_id === topic.id || r.to_topic_id === topic.id,
+          )
+          .map((r) => ({
+            id: r.id,
+            from_topic_id: r.from_topic_id,
+            to_topic_id: r.to_topic_id,
+            relation_type: r.relation_type,
+          })),
+      );
+      setNewRelType("relates_to");
+      setNewRelTarget("");
+    }
+  }, [mode, topic, radarContext]);
 
   useEffect(() => {
     if (mode !== "edit") {
@@ -335,16 +405,23 @@ export function TopicDetailModal({
         (nested.topic?.["canonical_name"] as string | undefined) ??
         topic.canonical_name;
 
-      // 1) Title + visibility
+      // 1) Title + visibility + group/parent
       const titleChanged =
         !!titleEdit.trim() && titleEdit.trim() !== originalTitle;
       const visibilityChanged =
         editIsPublic === topic.not_for_external_publication;
-      if (titleChanged || visibilityChanged) {
+      const currentParentId =
+        (nested.topic?.["parent_topic_id"] as string | null | undefined) ?? "";
+      const parentChanged = editParentId !== currentParentId;
+      if (titleChanged || visibilityChanged || parentChanged) {
         const patch: Parameters<typeof updateTopic>[1] = {};
         if (titleChanged) patch.canonical_name = titleEdit.trim();
         if (visibilityChanged)
           patch.not_for_external_publication = !editIsPublic;
+        if (parentChanged) {
+          if (editParentId) patch.parent_topic_id = editParentId;
+          else patch.clear_parent = true;
+        }
         await updateTopic(topic.id, patch);
       }
 
@@ -606,6 +683,22 @@ export function TopicDetailModal({
         }
       }
 
+      // 7) Relations — remove deleted edges, create new ones
+      for (const r of editRelations) {
+        if (r._deleted && r.id) {
+          await deleteRelation(r.id).catch(() => undefined);
+        }
+      }
+      for (const r of editRelations) {
+        if (r._new && !r._deleted) {
+          await createRelation(
+            r.from_topic_id,
+            r.to_topic_id,
+            r.relation_type,
+          );
+        }
+      }
+
       await refetch();
       setMode("view");
       onAfterSave?.();
@@ -695,6 +788,27 @@ export function TopicDetailModal({
                   onChange: refetch,
                 }
               : undefined,
+            groupEditor: topic ? (
+              <GroupEditor
+                topicId={topic.id}
+                groupOptions={groupOptions.filter((g) => g.id !== topic.id)}
+                parentId={editParentId}
+                onParentChange={setEditParentId}
+              />
+            ) : undefined,
+            relationsEditor:
+              topic && radarContext ? (
+                <RelationsEditor
+                  topicId={topic.id}
+                  relations={editRelations}
+                  onRelationsChange={setEditRelations}
+                  entries={radarContext.data.entries}
+                  newRelType={newRelType}
+                  newRelTarget={newRelTarget}
+                  onNewRelType={setNewRelType}
+                  onNewRelTarget={setNewRelTarget}
+                />
+              ) : undefined,
           }
         : undefined,
     [
@@ -705,6 +819,12 @@ export function TopicDetailModal({
       topic,
       nested,
       refetch,
+      groupOptions,
+      editParentId,
+      editRelations,
+      radarContext,
+      newRelType,
+      newRelTarget,
     ],
   );
 
@@ -802,7 +922,9 @@ export function TopicDetailModal({
                 right: 14,
                 display: "flex",
                 gap: "6px",
-                zIndex: 1,
+                // Above the in-modal help drawer (zIndex 5) so Save / Cancel /
+                // Close / Help stay reachable while help is open.
+                zIndex: 20,
               }}
             >
               {!editing ? (
@@ -876,6 +998,27 @@ export function TopicDetailModal({
                   </button>
                 </>
               )}
+              <button
+                type="button"
+                onClick={() => setHelpOpen((v) => !v)}
+                aria-pressed={helpOpen}
+                aria-label="Toggle field help"
+                title="What can I edit here?"
+                style={{
+                  ...overlayButtonStyle,
+                  color: "var(--color-white)",
+                  background: helpOpen
+                    ? "rgba(255,255,255,0.28)"
+                    : overlayButtonStyle.background,
+                  borderColor: helpOpen
+                    ? "rgba(255,255,255,0.75)"
+                    : "rgba(255,255,255,0.25)",
+                }}
+                onMouseEnter={(e) => !helpOpen && overlayHover(e, true)}
+                onMouseLeave={(e) => !helpOpen && overlayHover(e, false)}
+              >
+                ? Help
+              </button>
               <button
                 onClick={onClose}
                 aria-label="Close modal"
@@ -1391,6 +1534,65 @@ export function TopicDetailModal({
           </div>
         </>
       )}
+      {helpOpen && (
+        <aside
+          role="dialog"
+          aria-label="Field help"
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: "min(420px, 100%)",
+            backgroundColor: "var(--color-white)",
+            borderLeft: "1px solid var(--color-border)",
+            boxShadow: "-8px 0 24px rgba(0,0,0,0.18)",
+            display: "flex",
+            flexDirection: "column",
+            zIndex: 5,
+            animation: "modal-help-slide-in 160ms ease-out",
+          }}
+        >
+          <header
+            style={{
+              display: "flex",
+              alignItems: "center",
+              // Leave room on the right for the modal's floating action buttons
+              // (Save / Cancel / Close / Help), which render above this drawer.
+              padding: "var(--space-4) 150px var(--space-4) var(--space-5)",
+              backgroundColor: "var(--color-brand-dark-blue)",
+              color: "var(--color-white)",
+              flexShrink: 0,
+            }}
+          >
+            <h2
+              style={{
+                fontSize: "var(--font-size-md)",
+                fontWeight: "var(--font-weight-bold)",
+                color: "var(--color-white)",
+                margin: 0,
+              }}
+            >
+              Editing a technology
+            </h2>
+          </header>
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "var(--space-5)",
+            }}
+          >
+            <HelpMarkdown source={loadHelpContent("edit-technology")} />
+          </div>
+          <style>{`
+            @keyframes modal-help-slide-in {
+              from { transform: translateX(100%); }
+              to { transform: translateX(0); }
+            }
+          `}</style>
+        </aside>
+      )}
       {pendingTransition && (
         <RingPlacementDialog
           segments={allSegments}
@@ -1426,5 +1628,245 @@ export function TopicDetailModal({
         </div>
       </Modal>
     </Modal>
+  );
+}
+
+
+const grSectionHeading: React.CSSProperties = {
+  margin: "0 0 var(--space-2) 0",
+  fontSize: 13,
+  fontWeight: "var(--font-weight-bold)",
+  color: "var(--color-dark-blue)",
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+};
+
+const grControl: React.CSSProperties = {
+  padding: "4px 8px",
+  border: "1px solid var(--color-border)",
+  borderRadius: "var(--radius-sm)",
+  fontFamily: "var(--font-family)",
+  fontSize: 13,
+  background: "var(--color-white)",
+  color: "var(--color-dark-text)",
+};
+
+function GroupEditor({
+  groupOptions,
+  parentId,
+  onParentChange,
+}: {
+  topicId: string;
+  groupOptions: ParentOption[];
+  parentId: string;
+  onParentChange: (v: string) => void;
+}) {
+  return (
+    <section style={{ marginBottom: "var(--space-5)" }}>
+      <h3 style={grSectionHeading}>Part of</h3>
+      <select
+        value={parentId}
+        onChange={(e) => onParentChange(e.target.value)}
+        style={{ ...grControl, width: "100%", maxWidth: 360 }}
+        aria-label="Parent group"
+      >
+        <ParentOptionGroups options={groupOptions} />
+      </select>
+    </section>
+  );
+}
+
+const RELATION_TARGET_LIST_ID = "relation-target-options";
+
+function RelationsEditor({
+  topicId,
+  relations,
+  onRelationsChange,
+  entries,
+  newRelType,
+  newRelTarget,
+  onNewRelType,
+  onNewRelTarget,
+}: {
+  topicId: string;
+  relations: EditRelation[];
+  onRelationsChange: React.Dispatch<React.SetStateAction<EditRelation[]>>;
+  entries: RadarEntry[];
+  newRelType: string;
+  newRelTarget: string;
+  onNewRelType: (v: string) => void;
+  onNewRelTarget: (v: string) => void;
+}) {
+  const nameById = new Map(entries.map((e) => [e.topic_id, e.canonical_name]));
+  const idByName = new Map(entries.map((e) => [e.canonical_name, e.topic_id]));
+  const targetOptions = entries
+    .filter((e) => e.topic_id !== topicId)
+    .slice()
+    .sort((a, b) => a.canonical_name.localeCompare(b.canonical_name));
+  const visible = relations.filter((r) => !r._deleted);
+  const resolvedTargetId = idByName.get(newRelTarget.trim());
+  const canAdd = !!resolvedTargetId && resolvedTargetId !== topicId;
+
+  function addRelation() {
+    if (!resolvedTargetId || resolvedTargetId === topicId) return;
+    onRelationsChange((cur) => {
+      const exists = cur.some(
+        (r) =>
+          !r._deleted &&
+          r.from_topic_id === topicId &&
+          r.to_topic_id === resolvedTargetId &&
+          r.relation_type === newRelType,
+      );
+      if (exists) return cur;
+      return [
+        ...cur,
+        {
+          from_topic_id: topicId,
+          to_topic_id: resolvedTargetId,
+          relation_type: newRelType,
+          _new: true,
+        },
+      ];
+    });
+    onNewRelTarget("");
+  }
+
+  function removeRelation(target: EditRelation) {
+    onRelationsChange((cur) =>
+      cur.flatMap((r) =>
+        r === target ? (r._new ? [] : [{ ...r, _deleted: true }]) : [r],
+      ),
+    );
+  }
+
+  return (
+    <section style={{ marginBottom: "var(--space-5)" }}>
+      <h3 style={grSectionHeading}>Relations</h3>
+      {visible.length > 0 && (
+        <ul
+          style={{
+            listStyle: "none",
+            margin: "0 0 var(--space-2) 0",
+            padding: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+          }}
+        >
+          {visible.map((r, i) => {
+            const outgoing = r.from_topic_id === topicId;
+            const otherId = outgoing ? r.to_topic_id : r.from_topic_id;
+            const otherName = nameById.get(otherId) ?? "(unknown)";
+            const typeLabel =
+              RELATION_TYPE_LABELS[r.relation_type] ?? r.relation_type;
+            return (
+              <li
+                key={r.id ?? `new-${i}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  color: "var(--color-dark-text)",
+                }}
+              >
+                <span
+                  title={outgoing ? "outgoing" : "incoming"}
+                  style={{ color: "var(--color-muted-text)" }}
+                >
+                  {outgoing ? "→" : "←"} {typeLabel}:
+                </span>
+                <span style={{ fontWeight: "var(--font-weight-medium)" }}>
+                  {otherName}
+                </span>
+                {r._new && (
+                  <span
+                    style={{ fontSize: 11, color: "var(--color-muted-text)" }}
+                  >
+                    (new)
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeRelation(r)}
+                  aria-label={`Remove relation to ${otherName}`}
+                  style={{
+                    marginLeft: "auto",
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--color-danger)",
+                    cursor: "pointer",
+                    fontSize: 16,
+                    lineHeight: 1,
+                    padding: "0 4px",
+                  }}
+                >
+                  ×
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <select
+          value={newRelType}
+          onChange={(e) => onNewRelType(e.target.value)}
+          style={grControl}
+          aria-label="Relation type"
+        >
+          {RELATION_TYPE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <input
+          list={RELATION_TARGET_LIST_ID}
+          value={newRelTarget}
+          onChange={(e) => onNewRelTarget(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && canAdd) {
+              e.preventDefault();
+              addRelation();
+            }
+          }}
+          placeholder="Type a technology…"
+          aria-label="Relation target"
+          style={{ ...grControl, minWidth: 200, flex: 1 }}
+        />
+        <datalist id={RELATION_TARGET_LIST_ID}>
+          {targetOptions.map((e) => (
+            <option key={e.topic_id} value={e.canonical_name} />
+          ))}
+        </datalist>
+        <button
+          type="button"
+          onClick={addRelation}
+          disabled={!canAdd}
+          style={{
+            padding: "4px 12px",
+            border: "none",
+            borderRadius: "var(--radius-sm)",
+            background: canAdd
+              ? "var(--color-brand-dark-blue)"
+              : "var(--color-border)",
+            color: "var(--color-white)",
+            cursor: canAdd ? "pointer" : "default",
+            fontSize: 13,
+            fontFamily: "var(--font-family)",
+          }}
+        >
+          Add
+        </button>
+      </div>
+    </section>
   );
 }

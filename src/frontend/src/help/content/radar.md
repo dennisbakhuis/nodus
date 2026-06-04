@@ -1,12 +1,10 @@
 # Radar view
 
-The radar plots each technology as a dot on a circular diagram. Its position
-encodes two things:
+The radar plots each technology as a dot on a half-circle. Its position encodes
+two things:
 
-- **Segment** (angular slice) — the area of the business the technology
-  belongs to.
-- **Ring** (distance from the centre) — how committed the organisation is to
-  the technology.
+- **Segment** (the slice) — the area of the business the technology belongs to.
+- **Ring** (distance from the centre) — how committed the organisation is.
 
 ## The four rings
 
@@ -17,20 +15,52 @@ encodes two things:
 | **Explore** | Worth a closer look; small experiments allowed. |
 | **Monitor** | On our radar, but no investment yet.            |
 
-## Interacting with the radar
+## Moving around the radar
 
-- **Click a dot** to open the detail panel on the right with the technology's
-  description, ring history, and related topics.
-- **Use the sidebar** to filter by segment, ring, movement, search text, and
-  more. Filters are reflected in the URL — share a link to share a view.
-- **Switch cycle** in the sidebar to view a historical snapshot of the radar.
+- **Click a dot** to open its detail panel on the right.
+- **Click a segment** to zoom into it; press **Esc** to zoom back out.
+- **Scroll** to zoom and **drag** to pan. The zoom controls at the top of the
+  sidebar (**−**, the percentage, **⌂** home, **+**) do the same.
+- **Switch cycle** at the top of the sidebar to view a past radar snapshot.
+
+## Colour and shape
+
+By default dots are coloured by segment and drawn as plain dots. Two sidebar
+controls change that:
+
+- **Color dots by** — Segment, Ring tier, TRL, Time to mainstream, Strategic
+  relevance, or Movement.
+- **Shape dots by** — Dot, or Movement (markers showing how a dot has changed).
+
+## Filtering
+
+The **Filters** section narrows what stands out: matching dots stay bright, the
+rest dim — nothing moves. The **↺** next to the Filters heading clears
+everything at once.
+
+- **Search** — free text over names and peer references.
+- **Segment**, **Rings**, **Movement** — multi-select chips.
+- **Strategic relevance** — High / Medium / Low.
+- **Person** — show technologies linked to chosen people.
+- **TRL range** and **Time to mainstream** — two-handle sliders; the selected
+  range is shown in the section label.
+- **Group** — see below.
+
+## Group filter
+
+If technologies are organised into groups, the **Group** filter shows them as a
+collapsible tree. It starts folded; the **1 / 2 / 3** buttons unfold it to that
+depth. Selecting a group highlights its members and dims the rest, like search.
+When no groups exist the section says so in grey.
 
 ## Movements
 
-Arrows or pulse markers show how a technology has moved since the previous
-cycle (in, out, ring change). Filter by movement to focus on what has changed.
+Filter by **Movement** (New, Promoted, Demoted, Unchanged) to focus on what
+changed since the previous cycle. Movement can also drive a dot's colour or shape
+(see above).
 
-## Exporting
+## Other controls
 
-Use the **Export** menu in the top bar to save a PNG, SVG, or PDF of the
-current view.
+- **Collapse** the sidebar with the **«** handle on its edge; the **»** tab
+  reopens it.
+- **Export** (top bar) saves the current radar as **SVG**, **PNG**, or **PDF**.

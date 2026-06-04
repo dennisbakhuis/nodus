@@ -1,8 +1,19 @@
 import type { RadarData, RadarEntry, TechnologyRelation } from "../radar/types";
 
+export type GroupBrief = {
+  topic_id: string;
+  canonical_name: string;
+  slug: string;
+  on_radar: boolean;
+};
+
 export type TopicDetailNested = {
   topic: Record<string, unknown>;
   technology: Record<string, unknown> | null;
+  /** Grouping breadcrumb (root-first) and neighbours; visibility-filtered. */
+  group_ancestors?: GroupBrief[];
+  group_children?: GroupBrief[];
+  group_siblings?: GroupBrief[];
   factsheet: Record<string, unknown> | null;
   assessment: Record<string, unknown> | null;
   aliases: Array<{ id?: string; alias_name: string; source?: string | null }>;

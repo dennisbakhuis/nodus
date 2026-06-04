@@ -308,9 +308,20 @@ export type TopicDetailPeerReference = {
  * on the caller's role. Sub-shapes use generated schemas where exposed and
  * hand-typed ones for those not yet attached to a response_model.
  */
+export type GroupBrief = {
+  topic_id: string;
+  canonical_name: string;
+  slug: string;
+  on_radar: boolean;
+};
+
 export type TopicDetailResponse = {
   topic: TopicRead;
   technology: TechnologyRead | null;
+  /** Grouping breadcrumb, root-first; already filtered to visible ancestors. */
+  group_ancestors?: GroupBrief[];
+  group_children?: GroupBrief[];
+  group_siblings?: GroupBrief[];
   factsheet: FactsheetRead | null;
   assessment: TopicDetailAssessment | null;
   aliases: AliasRead[];

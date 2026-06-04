@@ -14,6 +14,7 @@ export type ManageNavItem = {
 export const MANAGE_NAV: ManageNavItem[] = [
   { to: "/manage/cycles", label: "Cycles", role: "writer" },
   { to: "/manage/segments", label: "Segments", role: "admin" },
+  { to: "/manage/groups", label: "Groups", role: "writer" },
   { to: "/manage/persons", label: "People", role: "writer" },
   { to: "/manage/users", label: "Users", role: "admin" },
   { to: "/manage/visibility", label: "Data Visibility", role: "admin" },

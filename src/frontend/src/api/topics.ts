@@ -6,6 +6,7 @@ import type {
   AliasRead,
   FactsheetCreate,
   FactsheetRead,
+  GroupTreeNode,
   MovementEventRead,
   TechnologyRead,
   TechnologyUpdate,
@@ -14,6 +15,14 @@ import type {
   TopicRead,
   TopicUpdate,
 } from "../manage/types";
+
+export async function listGroupsTree(): Promise<GroupTreeNode[]> {
+  return request<GroupTreeNode[]>(`/topics/groups-tree`);
+}
+
+export async function deleteTopic(topicId: string): Promise<void> {
+  await request<void>(`/topics/${topicId}`, { method: "DELETE" });
+}
 
 export type TopicListParams = {
   registry_status?: string;

@@ -18,6 +18,7 @@ class TopicCreate(BaseModel):
     registry_status: RegistryStatus = RegistryStatus.Backlog
     current_segment_id: uuid.UUID | None = None
     current_ring: Ring | None = None
+    parent_topic_id: uuid.UUID | None = None
 
 
 class TopicUpdate(BaseModel):
@@ -26,6 +27,8 @@ class TopicUpdate(BaseModel):
     canonical_name: str | None = None
     slug: str | None = None
     not_for_external_publication: bool | None = None
+    parent_topic_id: uuid.UUID | None = None
+    clear_parent: bool = False
 
 
 class TopicRead(BaseModel):
@@ -35,6 +38,7 @@ class TopicRead(BaseModel):
     canonical_name: str
     slug: str
     not_for_external_publication: bool
+    parent_topic_id: uuid.UUID | None = None
     created_at: datetime
     technology_id: uuid.UUID | None = None
     registry_status: str | None = None
@@ -100,6 +104,26 @@ class AliasRead(BaseModel):
     source: str | None
 
     model_config = {"from_attributes": True}
+
+
+class GroupBrief(BaseModel):
+    """Compact reference to a Topic used in grouping ancestor/child/sibling lists."""
+
+    topic_id: uuid.UUID
+    canonical_name: str
+    slug: str
+    on_radar: bool
+
+
+class GroupTreeNode(BaseModel):
+    """One node of the grouping hierarchy forest."""
+
+    topic_id: uuid.UUID
+    canonical_name: str
+    slug: str
+    not_for_external_publication: bool
+    on_radar: bool
+    children: list[GroupTreeNode] = []
 
 
 class TopicCandidate(BaseModel):

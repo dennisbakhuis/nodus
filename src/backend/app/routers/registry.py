@@ -31,6 +31,8 @@ from app.schemas.person import PersonReadPublic
 from app.schemas.technology import (
     AliasCreate,
     AliasRead,
+    GroupBrief,
+    GroupTreeNode,
     TechnologyHeaderUpdate,
     TechnologyRead,
     TopicCandidate,
@@ -40,6 +42,13 @@ from app.schemas.technology import (
     TopicUpdate,
 )
 from app.services.dedup import find_exact_alias_match, find_fuzzy_alias_matches
+from app.services.grouping import (
+    MAX_GROUP_DEPTH,
+    ancestor_ids,
+    build_children_map,
+    build_parent_map,
+    subtree_height,
+)
 from app.services.movements import record_event
 from app.services.normalize import normalize_alias
 from app.services.visibility import apply_field_visibility
@@ -77,11 +86,47 @@ def _topic_to_read(topic: Topic, session: SessionDep) -> TopicRead:
         canonical_name=topic.canonical_name,
         slug=topic.slug,
         not_for_external_publication=topic.not_for_external_publication,
+        parent_topic_id=topic.parent_topic_id,
         created_at=topic.created_at,
         technology_id=tech.id if tech else None,
         registry_status=tech.registry_status if tech else None,
         current_ring=tech.current_ring if tech else None,
         current_segment_id=tech.current_segment_id if tech else None,
+    )
+
+
+def _validate_parent(
+    session: SessionDep, topic_id: uuid.UUID, parent_topic_id: uuid.UUID
+) -> None:
+    """Reject self-parenting, missing parents, cycles, and over-deep nesting."""
+    if parent_topic_id == topic_id:
+        raise HTTPException(status_code=422, detail="A topic cannot be its own parent.")
+    if session.get(Topic, parent_topic_id) is None:
+        raise HTTPException(status_code=404, detail="Parent topic not found.")
+
+    parent_map = build_parent_map(session)
+    if topic_id in ancestor_ids(parent_map, parent_topic_id):
+        raise HTTPException(
+            status_code=422, detail="Cannot set parent: this would create a cycle."
+        )
+
+    children_map = build_children_map(session)
+    parent_depth = len(ancestor_ids(parent_map, parent_topic_id)) + 1
+    if parent_depth + subtree_height(children_map, topic_id) > MAX_GROUP_DEPTH:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Group nesting exceeds the maximum depth of {MAX_GROUP_DEPTH}.",
+        )
+
+
+def _group_brief(session: SessionDep, topic: Topic) -> GroupBrief:
+    """Compact reference to a topic for ancestor/child/sibling lists."""
+    tech = session.exec(select(Technology).where(Technology.topic_id == topic.id)).first()
+    return GroupBrief(
+        topic_id=topic.id,
+        canonical_name=topic.canonical_name,
+        slug=topic.slug,
+        on_radar=tech is not None and tech.registry_status == str(RegistryStatus.OnRadar),
     )
 
 
@@ -177,6 +222,7 @@ def list_topics(
             canonical_name=topic.canonical_name,
             slug=topic.slug,
             not_for_external_publication=topic.not_for_external_publication,
+            parent_topic_id=topic.parent_topic_id,
             created_at=topic.created_at,
             technology_id=tech.id if tech else None,
             registry_status=tech.registry_status if tech else None,
@@ -185,6 +231,58 @@ def list_topics(
         )
         for topic, tech in rows
     ]
+
+
+@router.get("/topics/groups-tree", response_model=list[GroupTreeNode])
+def get_groups_tree(session: SessionDep, user: OptionalUserDep) -> list[GroupTreeNode]:
+    """The grouping hierarchy as a forest.
+
+    Includes every Topic that participates in the hierarchy (has a parent or has
+    children). Under a public-only view, private nodes are dropped and their
+    public descendants are lifted to the nearest public ancestor.
+    """
+    topics = session.exec(select(Topic)).all()
+    topic_map = {t.id: t for t in topics}
+    on_radar_ids = {
+        tech.topic_id
+        for tech in session.exec(select(Technology)).all()
+        if tech.registry_status == str(RegistryStatus.OnRadar)
+    }
+
+    children_map: dict[uuid.UUID, list[uuid.UUID]] = {}
+    has_parent: set[uuid.UUID] = set()
+    for t in topics:
+        if t.parent_topic_id is not None:
+            children_map.setdefault(t.parent_topic_id, []).append(t.id)
+            has_parent.add(t.id)
+    participating = set(children_map.keys()) | has_parent
+
+    public_only = is_public_only(user)
+
+    def build(ids: list[uuid.UUID]) -> list[GroupTreeNode]:
+        nodes: list[GroupTreeNode] = []
+        for tid in sorted(ids, key=lambda c: topic_map[c].canonical_name):
+            topic = topic_map[tid]
+            child_nodes = build(children_map.get(tid, []))
+            if public_only and topic.not_for_external_publication:
+                nodes.extend(child_nodes)
+                continue
+            nodes.append(
+                GroupTreeNode(
+                    topic_id=topic.id,
+                    canonical_name=topic.canonical_name,
+                    slug=topic.slug,
+                    not_for_external_publication=topic.not_for_external_publication,
+                    on_radar=topic.id in on_radar_ids,
+                    children=child_nodes,
+                )
+            )
+        return nodes
+
+    roots = [
+        t.id for t in topics if t.parent_topic_id is None and t.id in participating
+    ]
+    return build(roots)
 
 
 @router.get("/topics/{slug}")
@@ -295,9 +393,44 @@ def get_topic(slug: str, session: SessionDep, user: OptionalUserDep) -> dict[str
                 "full_name": f"{creator.first_name} {creator.last_name}".strip(),
             }
 
+    public_only = is_public_only(user)
+
+    def _visible(t: Topic) -> bool:
+        return not (public_only and t.not_for_external_publication)
+
+    parent_map = build_parent_map(session)
+    ancestor_topics = [
+        session.get(Topic, aid) for aid in reversed(ancestor_ids(parent_map, topic.id))
+    ]
+    ancestors = [
+        _group_brief(session, t).model_dump(mode="json")
+        for t in ancestor_topics
+        if t is not None and _visible(t)
+    ]
+    child_topics = session.exec(
+        select(Topic).where(Topic.parent_topic_id == topic.id).order_by(Topic.canonical_name)
+    ).all()
+    children = [
+        _group_brief(session, t).model_dump(mode="json") for t in child_topics if _visible(t)
+    ]
+    siblings: list[dict[str, object]] = []
+    if topic.parent_topic_id is not None:
+        sibling_topics = session.exec(
+            select(Topic)
+            .where(Topic.parent_topic_id == topic.parent_topic_id)
+            .where(Topic.id != topic.id)
+            .order_by(Topic.canonical_name)
+        ).all()
+        siblings = [
+            _group_brief(session, t).model_dump(mode="json") for t in sibling_topics if _visible(t)
+        ]
+
     payload: dict[str, object] = {
         "topic": _topic_to_read(topic, session).model_dump(),
         "technology": TechnologyRead.model_validate(tech).model_dump() if tech else None,
+        "group_ancestors": ancestors,
+        "group_children": children,
+        "group_siblings": siblings,
         "factsheet": factsheet_read.model_dump() if factsheet_read else None,
         "assessment": assessment_read.model_dump() if assessment_read else None,
         "aliases": [AliasRead.model_validate(a).model_dump() for a in aliases],
@@ -360,6 +493,11 @@ def create_topic(
     )
     session.add(topic)
     session.flush()
+
+    if payload.parent_topic_id is not None:
+        _validate_parent(session, topic.id, payload.parent_topic_id)
+        topic.parent_topic_id = payload.parent_topic_id
+        session.add(topic)
 
     canonical_alias = Alias(
         topic_id=topic.id,
@@ -435,10 +573,51 @@ def update_topic(
     if payload.not_for_external_publication is not None:
         topic.not_for_external_publication = payload.not_for_external_publication
 
+    if payload.clear_parent:
+        topic.parent_topic_id = None
+    elif payload.parent_topic_id is not None:
+        _validate_parent(session, topic.id, payload.parent_topic_id)
+        topic.parent_topic_id = payload.parent_topic_id
+
     session.add(topic)
     session.commit()
     session.refresh(topic)
     return _topic_to_read(topic, session)
+
+
+@router.delete("/topics/{topic_id}", status_code=204)
+def delete_topic(
+    topic_id: uuid.UUID,
+    session: SessionDep,
+    _user: WriterDep,
+) -> None:
+    """Delete a label group (a Topic with no Technology), reparenting its children.
+
+    Children are lifted to the deleted node's own parent in the same transaction
+    so no subtree is orphaned and the FK constraint never trips. Topics that back
+    a Technology must be archived instead of deleted.
+    """
+    topic = session.get(Topic, topic_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    tech = session.exec(select(Technology).where(Technology.topic_id == topic_id)).first()
+    if tech is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="This topic is on the radar; archive the technology instead of deleting.",
+        )
+
+    children = session.exec(select(Topic).where(Topic.parent_topic_id == topic_id)).all()
+    for child in children:
+        child.parent_topic_id = topic.parent_topic_id
+        session.add(child)
+
+    for alias in session.exec(select(Alias).where(Alias.topic_id == topic_id)).all():
+        session.delete(alias)
+
+    session.delete(topic)
+    session.commit()
 
 
 @router.patch("/technologies/{tech_id}", response_model=TechnologyRead)

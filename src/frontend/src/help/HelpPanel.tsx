@@ -2,22 +2,8 @@ import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { useHelp } from "./HelpContext";
 import { HelpMarkdown } from "./HelpMarkdown";
+import { loadHelpContent } from "./loadHelpContent";
 import { routeToHelp } from "./routeToHelp";
-
-const docs = import.meta.glob("./content/*.md", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
-
-function loadContent(slug: string): string {
-  const key = `./content/${slug}.md`;
-  return (
-    docs[key] ??
-    docs["./content/default.md"] ??
-    "# Help\n\nNo help content available for this page yet."
-  );
-}
 
 const HEADER_HEIGHT = 56;
 const PANEL_WIDTH = 440;
@@ -32,7 +18,7 @@ export function HelpPanel() {
   const wasOpenRef = useRef(false);
 
   const { slug, title } = routeToHelp(location.pathname);
-  const source = loadContent(slug);
+  const source = loadHelpContent(slug);
 
   useEffect(() => {
     if (open) {

@@ -1,10 +1,41 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 type Props = {
   source: string;
+  /** When true, h2/h3 get a slugified `id` so they can be linked to (used by
+   * the Guide page's chapter side-menu). */
+  withAnchors?: boolean;
 };
+
+/** Slugify heading text into a stable anchor id, matching the Guide TOC. */
+export function slugifyHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+function nodeText(children: ReactNode): string {
+  if (typeof children === "string" || typeof children === "number") {
+    return String(children);
+  }
+  if (Array.isArray(children)) return children.map(nodeText).join("");
+  if (
+    children &&
+    typeof children === "object" &&
+    "props" in children &&
+    (children as { props?: { children?: ReactNode } }).props
+  ) {
+    return nodeText(
+      (children as { props: { children?: ReactNode } }).props.children,
+    );
+  }
+  return "";
+}
 
 const styles: Record<string, CSSProperties> = {
   h1: {
@@ -107,7 +138,7 @@ const styles: Record<string, CSSProperties> = {
   },
 };
 
-const components: Components = {
+const baseComponents: Components = {
   h1: ({ children }) => <h1 style={styles.h1}>{children}</h1>,
   h2: ({ children }) => <h2 style={styles.h2}>{children}</h2>,
   h3: ({ children }) => <h3 style={styles.h3}>{children}</h3>,
@@ -139,9 +170,26 @@ const components: Components = {
   hr: () => <hr style={styles.hr} />,
 };
 
-export function HelpMarkdown({ source }: Props) {
+const anchorComponents: Components = {
+  ...baseComponents,
+  h2: ({ children }) => (
+    <h2 id={slugifyHeading(nodeText(children))} style={styles.h2}>
+      {children}
+    </h2>
+  ),
+  h3: ({ children }) => (
+    <h3 id={slugifyHeading(nodeText(children))} style={styles.h3}>
+      {children}
+    </h3>
+  ),
+};
+
+export function HelpMarkdown({ source, withAnchors = false }: Props) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={withAnchors ? anchorComponents : baseComponents}
+    >
       {source}
     </ReactMarkdown>
   );

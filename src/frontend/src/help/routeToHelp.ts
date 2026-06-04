@@ -23,16 +23,25 @@ const routes: Route[] = [
   { match: /^\/manage\/cycles/, slug: "manage-cycles", title: "Cycles" },
   { match: /^\/manage\/settings/, slug: "manage-settings", title: "Settings" },
   { match: /^\/manage\/segments/, slug: "manage-segments", title: "Segments" },
-  { match: /^\/manage\/persons/, slug: "manage-persons", title: "Persons" },
+  { match: /^\/manage\/groups/, slug: "manage-groups", title: "Groups" },
+  { match: /^\/manage\/persons/, slug: "manage-persons", title: "People" },
   { match: /^\/manage\/users/, slug: "manage-users", title: "Users" },
   {
     match: /^\/manage\/visibility/,
     slug: "manage-visibility",
-    title: "Visibility",
+    title: "Data Visibility",
   },
-  { match: /^\/manage\/backup/, slug: "manage-backup", title: "Backup" },
-  { match: /^\/manage\/import/, slug: "manage-import", title: "Import" },
-  { match: /^\/manage\/api/, slug: "manage-api", title: "API access" },
+  {
+    match: /^\/manage\/backup/,
+    slug: "manage-backup",
+    title: "Backup & Restore",
+  },
+  {
+    match: /^\/manage\/import/,
+    slug: "manage-import",
+    title: "Import References",
+  },
+  { match: /^\/manage\/api/, slug: "manage-api", title: "API" },
   { match: /^\/manage(\/|$)/, slug: "manage", title: "Manage" },
 ];
 

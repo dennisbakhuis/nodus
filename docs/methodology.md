@@ -266,6 +266,21 @@ Common patterns across peer radars:
 
 Pick one pattern and commit. Mixing them produces overlapping segments and constant boundary disputes.
 
+#### Technology Groups / Clusters
+
+Segments are deliberately coarse (four to six, stable, long-lived). They are the wrong tool for a finer question that recurs in practice: *"these technologies are all part of the same family."* For example, **Agentic AI** and **Retrieval-Augmented Generation** are both facets of **Generative AI**; a curator wants to see them as a cluster without inventing a new segment.
+
+A **group** is that finer layer — a lightweight, arbitrarily-nestable taxonomy *between* the segment and the individual technology (e.g. *Generative AI ▸ Agentic AI ▸ tool-using agents*). Groups differ from segments in every way that matters:
+
+- **Fine-grained and many**, where segments are coarse and few.
+- **Hierarchical** (multi-level), where segments are flat.
+- **Free to evolve**, where segments stay stable for comparability.
+- **Metadata and a filter — not a position.** A group never moves a dot or adds a ring. Selecting a group simply **highlights its members and dims the rest, exactly like the search box.** This preserves the core principle below: one position = one action.
+
+A group node can be a pure label (an organising concept that never appears on the radar) or an on-radar technology that also acts as a parent — both are supported. Groups are distinct from **relations** (`drives` / `relates_to`): relations express *influence*, groups express *"is a kind of."* This grouping supersedes the older, unused "Strategic Innovation Field" notion.
+
+Use groups for navigation and storytelling (filter the radar to a family, show a "Part of: A ▸ B" breadcrumb on the factsheet, collapse the list by family). Do **not** try to render the hierarchy *on* the radar itself — that breaks the design principles that follow.
+
 #### Design Principles
 
 - **Keep it simple.** The radar should be readable at a glance. Resist encoding additional dimensions (size, shape, colour overlays) — they make the visual dense without making it more useful. Position communicates the single most important signal: what to do.

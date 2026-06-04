@@ -3,6 +3,23 @@ import type { FilterState, RadarData, RadarEntry, RingName } from "./types";
 import { applyListFilters } from "./filtering";
 import { themeByKey } from "./segmentThemes";
 import { MovementIndicator } from "../shared/MovementIndicator";
+import { listGroupsTree } from "../api/topics";
+import type { GroupTreeNode } from "../manage/types";
+
+const UNGROUPED_KEY = "__ungrouped__";
+
+/** Map every topic id in a group forest to its display name. */
+function groupNameMap(nodes: GroupTreeNode[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (list: GroupTreeNode[]) => {
+    for (const n of list) {
+      out.set(n.topic_id, n.canonical_name);
+      if (n.children) walk(n.children);
+    }
+  };
+  walk(nodes);
+  return out;
+}
 
 type Props = {
   data: RadarData;
@@ -45,6 +62,27 @@ export function ListView({
 }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [groupByFamily, setGroupByFamily] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [groupNames, setGroupNames] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+  useEffect(() => {
+    let cancelled = false;
+    listGroupsTree()
+      .then((tree) => {
+        if (!cancelled) setGroupNames(groupNameMap(tree));
+      })
+      .catch(() => {
+        /* grouping is optional */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data]);
+  const hasGroups = groupNames.size > 0;
   const lastClickIdxRef = useRef<number | null>(null);
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
   const selectionEnabled =
@@ -194,6 +232,243 @@ export function ListView({
     onSelectionChange!(next);
   }
 
+  // Shift-range selection indexes against `sorted`; keep a stable map so a
+  // grouped layout still resolves each row to its global position.
+  const indexById = new Map(sorted.map((e, i) => [e.id, i]));
+  const colCount =
+    8 + (selectionEnabled ? 1 : 0) + (showVisibility ? 1 : 0);
+
+  // Bucket visible rows by root family (preserving sort order). Entries with
+  // no group fall under "Ungrouped".
+  function groupKey(entry: RadarEntry): string {
+    const path = entry.ancestor_path ?? [];
+    if (path.length > 0 && entry.root_group_id) return entry.root_group_id;
+    return UNGROUPED_KEY;
+  }
+  const buckets: { key: string; label: string; rows: RadarEntry[] }[] = [];
+  if (groupByFamily && hasGroups) {
+    const byKey = new Map<string, RadarEntry[]>();
+    for (const entry of sorted) {
+      const key = groupKey(entry);
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key)!.push(entry);
+    }
+    for (const [key, rows] of byKey) {
+      const label =
+        key === UNGROUPED_KEY ? "Ungrouped" : (groupNames.get(key) ?? "Group");
+      buckets.push({ key, label, rows });
+    }
+    buckets.sort((a, b) => {
+      if (a.key === UNGROUPED_KEY) return 1;
+      if (b.key === UNGROUPED_KEY) return -1;
+      return a.label.localeCompare(b.label);
+    });
+  }
+
+  function toggleGroupCollapsed(key: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function renderRow(entry: RadarEntry) {
+    const idx = indexById.get(entry.id) ?? 0;
+    const ringName = getRingName(entry);
+    const ringColor =
+      RING_BADGE_COLORS[ringName] ?? "var(--color-brand-dark-blue)";
+    const seg = getSegment(entry);
+    const theme = themeByKey(seg?.theme_key);
+    const zebraBg =
+      idx % 2 === 0
+        ? "var(--color-white)"
+        : "color-mix(in srgb, var(--color-page-background) 50%, var(--color-white))";
+
+    return (
+      <tr
+        key={entry.id}
+        onClick={() => onRowClick(entry)}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onRowClick(entry);
+          }
+        }}
+        style={{
+          cursor: "pointer",
+          background: zebraBg,
+          transition: "background 80ms",
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLTableRowElement).style.background =
+            "color-mix(in srgb, var(--color-brand-dark-blue) 6%, var(--color-white))";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLTableRowElement).style.background = zebraBg;
+        }}
+      >
+        {selectionEnabled && (
+          <td
+            style={{
+              ...tdStyle,
+              background: "transparent",
+              width: 32,
+              padding: "8px 0 8px 12px",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={selectedIds!.has(entry.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleRow(idx, entry, e.shiftKey);
+              }}
+              onChange={() => {
+                /* state lives in onClick to read shiftKey */
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
+              aria-label={`Select ${entry.canonical_name}`}
+              style={{ cursor: "pointer" }}
+            />
+          </td>
+        )}
+        <td
+          style={{
+            ...tdStyle,
+            background: "transparent",
+            fontWeight: "var(--font-weight-medium)",
+          }}
+        >
+          {entry.canonical_name}
+        </td>
+        <td
+          style={{
+            ...tdStyle,
+            background: "transparent",
+            color:
+              entry.registry_status == null
+                ? "var(--color-muted-text)"
+                : "var(--color-dark-text)",
+            fontSize: "11px",
+          }}
+        >
+          {entry.registry_status ?? "Candidate"}
+        </td>
+        <td style={{ ...tdStyle, background: "transparent" }}>
+          {ringName ? (
+            <span
+              style={{
+                background: ringColor,
+                color: "var(--color-white)",
+                fontSize: "10px",
+                fontWeight: "var(--font-weight-bold)",
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                padding: "2px 8px",
+                borderRadius: "10px",
+              }}
+            >
+              {ringName}
+            </span>
+          ) : (
+            <span style={{ color: "var(--color-muted-text)" }}>—</span>
+          )}
+        </td>
+        <td style={{ ...tdStyle, background: "transparent" }}>
+          <span
+            style={{
+              background: theme.chipBg,
+              color: theme.chipText,
+              fontSize: "11px",
+              fontWeight: "var(--font-weight-medium)",
+              padding: "2px 8px",
+              borderRadius: "10px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {seg?.name ?? "—"}
+          </span>
+        </td>
+        <td style={{ ...tdStyle, background: "transparent" }}>
+          {entry.movement ? (
+            <MovementIndicator
+              movement={entry.movement}
+              showLabel
+              style={{ fontSize: "11px", gap: 4 }}
+            />
+          ) : (
+            <span style={{ color: "var(--color-muted-text)" }}>—</span>
+          )}
+        </td>
+        <td
+          style={{
+            ...tdStyle,
+            background: "transparent",
+            textAlign: "right",
+            color:
+              entry.trl == null
+                ? "var(--color-muted-text)"
+                : "var(--color-dark-text)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {entry.trl ?? "—"}
+        </td>
+        <td
+          style={{
+            ...tdStyle,
+            background: "transparent",
+            color: "var(--color-muted-text)",
+            maxWidth: 360,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={entry.summary ?? undefined}
+        >
+          {entry.summary || "—"}
+        </td>
+        <td
+          style={{
+            ...tdStyle,
+            background: "transparent",
+            textAlign: "right",
+            fontVariantNumeric: "tabular-nums",
+            color:
+              (entry.peer_reference_count ?? 0) > 0
+                ? "var(--color-dark-text)"
+                : "var(--color-muted-text)",
+          }}
+        >
+          {entry.peer_reference_count ?? 0}
+        </td>
+        {showVisibility && (
+          <td
+            style={{
+              ...tdStyle,
+              background: "transparent",
+              fontSize: "11px",
+              color: entry.not_for_external_publication
+                ? "var(--color-muted-text)"
+                : "var(--color-dark-text)",
+            }}
+            title={
+              entry.not_for_external_publication
+                ? "Not for external publication"
+                : "Visible externally"
+            }
+          >
+            {entry.not_for_external_publication ? "🔒 Private" : "🌐 Public"}
+          </td>
+        )}
+      </tr>
+    );
+  }
+
   return (
     <div
       style={{
@@ -251,6 +526,29 @@ export function ListView({
                 Clear
               </button>
             </span>
+          )}
+          {hasGroups && (
+            <button
+              type="button"
+              onClick={() => setGroupByFamily((v) => !v)}
+              aria-pressed={groupByFamily}
+              style={{
+                background: groupByFamily
+                  ? "var(--color-brand-dark-blue)"
+                  : "var(--color-white)",
+                color: groupByFamily
+                  ? "var(--color-white)"
+                  : "var(--color-brand-dark-blue)",
+                border: "1px solid var(--color-brand-dark-blue)",
+                borderRadius: "var(--radius-sm)",
+                cursor: "pointer",
+                fontSize: 12,
+                padding: "3px 10px",
+                fontFamily: "var(--font-family)",
+              }}
+            >
+              Group by family
+            </button>
           )}
           <span style={{ fontSize: "12px", color: "var(--color-muted-text)" }}>
             {sorted.length} of {data.entries.length}
@@ -384,211 +682,45 @@ export function ListView({
                 )}
               </tr>
             </thead>
-            <tbody>
-              {sorted.map((entry, idx) => {
-                const ringName = getRingName(entry);
-                const ringColor =
-                  RING_BADGE_COLORS[ringName] ?? "var(--color-brand-dark-blue)";
-                const seg = getSegment(entry);
-                const theme = themeByKey(seg?.theme_key);
-                const zebraBg =
-                  idx % 2 === 0
-                    ? "var(--color-white)"
-                    : "color-mix(in srgb, var(--color-page-background) 50%, var(--color-white))";
-
+            {groupByFamily && hasGroups ? (
+              buckets.map((bucket) => {
+                const collapsed = collapsedGroups.has(bucket.key);
                 return (
-                  <tr
-                    key={entry.id}
-                    onClick={() => onRowClick(entry)}
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onRowClick(entry);
-                      }
-                    }}
-                    style={{
-                      cursor: "pointer",
-                      background: zebraBg,
-                      transition: "background 80ms",
-                    }}
-                    onMouseEnter={(e) => {
-                      (
-                        e.currentTarget as HTMLTableRowElement
-                      ).style.background =
-                        "color-mix(in srgb, var(--color-brand-dark-blue) 6%, var(--color-white))";
-                    }}
-                    onMouseLeave={(e) => {
-                      (
-                        e.currentTarget as HTMLTableRowElement
-                      ).style.background = zebraBg;
-                    }}
-                  >
-                    {selectionEnabled && (
+                  <tbody key={bucket.key}>
+                    <tr>
                       <td
+                        colSpan={colCount}
+                        onClick={() => toggleGroupCollapsed(bucket.key)}
                         style={{
-                          ...tdStyle,
-                          background: "transparent",
-                          width: 32,
-                          padding: "8px 0 8px 12px",
+                          padding: "8px 12px",
+                          cursor: "pointer",
+                          background:
+                            "color-mix(in srgb, var(--color-brand-dark-blue) 5%, var(--color-white))",
+                          borderBottom: "1px solid var(--color-border)",
+                          fontWeight: "var(--font-weight-bold)",
+                          fontSize: "12px",
+                          color: "var(--color-brand-dark-blue)",
+                          userSelect: "none",
                         }}
-                        onClick={(e) => e.stopPropagation()}
                       >
-                        <input
-                          type="checkbox"
-                          checked={selectedIds!.has(entry.id)}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleRow(idx, entry, e.shiftKey);
-                          }}
-                          onChange={() => {
-                            /* state lives in onClick to read shiftKey */
-                          }}
-                          onKeyDown={(e) => e.stopPropagation()}
-                          aria-label={`Select ${entry.canonical_name}`}
-                          style={{ cursor: "pointer" }}
-                        />
-                      </td>
-                    )}
-                    <td
-                      style={{
-                        ...tdStyle,
-                        background: "transparent",
-                        fontWeight: "var(--font-weight-medium)",
-                      }}
-                    >
-                      {entry.canonical_name}
-                    </td>
-                    <td
-                      style={{
-                        ...tdStyle,
-                        background: "transparent",
-                        color:
-                          entry.registry_status == null
-                            ? "var(--color-muted-text)"
-                            : "var(--color-dark-text)",
-                        fontSize: "11px",
-                      }}
-                    >
-                      {entry.registry_status ?? "Candidate"}
-                    </td>
-                    <td style={{ ...tdStyle, background: "transparent" }}>
-                      {ringName ? (
+                        {collapsed ? "▸" : "▾"} {bucket.label}{" "}
                         <span
                           style={{
-                            background: ringColor,
-                            color: "var(--color-white)",
-                            fontSize: "10px",
-                            fontWeight: "var(--font-weight-bold)",
-                            letterSpacing: "0.04em",
-                            textTransform: "uppercase",
-                            padding: "2px 8px",
-                            borderRadius: "10px",
+                            color: "var(--color-muted-text)",
+                            fontWeight: "var(--font-weight-medium)",
                           }}
                         >
-                          {ringName}
+                          ({bucket.rows.length})
                         </span>
-                      ) : (
-                        <span style={{ color: "var(--color-muted-text)" }}>
-                          —
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ ...tdStyle, background: "transparent" }}>
-                      <span
-                        style={{
-                          background: theme.chipBg,
-                          color: theme.chipText,
-                          fontSize: "11px",
-                          fontWeight: "var(--font-weight-medium)",
-                          padding: "2px 8px",
-                          borderRadius: "10px",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {seg?.name ?? "—"}
-                      </span>
-                    </td>
-                    <td style={{ ...tdStyle, background: "transparent" }}>
-                      {entry.movement ? (
-                        <MovementIndicator
-                          movement={entry.movement}
-                          showLabel
-                          style={{ fontSize: "11px", gap: 4 }}
-                        />
-                      ) : (
-                        <span style={{ color: "var(--color-muted-text)" }}>
-                          —
-                        </span>
-                      )}
-                    </td>
-                    <td
-                      style={{
-                        ...tdStyle,
-                        background: "transparent",
-                        textAlign: "right",
-                        color:
-                          entry.trl == null
-                            ? "var(--color-muted-text)"
-                            : "var(--color-dark-text)",
-                        fontVariantNumeric: "tabular-nums",
-                      }}
-                    >
-                      {entry.trl ?? "—"}
-                    </td>
-                    <td
-                      style={{
-                        ...tdStyle,
-                        background: "transparent",
-                        color: "var(--color-muted-text)",
-                        maxWidth: 360,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={entry.summary ?? undefined}
-                    >
-                      {entry.summary || "—"}
-                    </td>
-                    <td
-                      style={{
-                        ...tdStyle,
-                        background: "transparent",
-                        textAlign: "right",
-                        fontVariantNumeric: "tabular-nums",
-                        color:
-                          (entry.peer_reference_count ?? 0) > 0
-                            ? "var(--color-dark-text)"
-                            : "var(--color-muted-text)",
-                      }}
-                    >
-                      {entry.peer_reference_count ?? 0}
-                    </td>
-                    {showVisibility && (
-                      <td
-                        style={{
-                          ...tdStyle,
-                          background: "transparent",
-                          fontSize: "11px",
-                          color: entry.not_for_external_publication
-                            ? "var(--color-muted-text)"
-                            : "var(--color-dark-text)",
-                        }}
-                        title={
-                          entry.not_for_external_publication
-                            ? "Not for external publication"
-                            : "Visible externally"
-                        }
-                      >
-                        {entry.not_for_external_publication
-                          ? "🔒 Private"
-                          : "🌐 Public"}
                       </td>
-                    )}
-                  </tr>
+                    </tr>
+                    {!collapsed && bucket.rows.map((entry) => renderRow(entry))}
+                  </tbody>
                 );
-              })}
-            </tbody>
+              })
+            ) : (
+              <tbody>{sorted.map((entry) => renderRow(entry))}</tbody>
+            )}
           </table>
         )}
       </div>

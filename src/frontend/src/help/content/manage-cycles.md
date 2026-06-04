@@ -1,26 +1,29 @@
 # Cycles
 
-A **cycle** is one round of radar assessment — typically run quarterly or
-biannually. Each cycle has a name, a start date, a theme colour, and a set
-of deliverables (the radar snapshot, summary brief, etc.).
+A **cycle** is one round of radar assessment — typically quarterly or biannual.
+Exactly one cycle is *open* at a time; the rest are *closed* snapshots.
 
 ## Creating a cycle
 
-Click **New cycle**, give it a name (e.g. _2026 H1_), pick a start date,
-and choose a colour. The new cycle becomes the _current_ cycle automatically
-and is what users see when they visit `/radar`.
+Click **New Cycle**, enter a **name** (e.g. *2026-Q1*), a **start date**
+(defaults to today), and a **colour** (a segment theme). The new cycle becomes
+the open one shown at `/radar`.
 
-## Closing a cycle
+## The open cycle
 
-When a cycle ends, click **Close**. Closing freezes the cycle so it can no
-longer be edited. The radar snapshot for that moment in time remains
-viewable from the cycle picker in the radar sidebar.
+The open cycle shows how long it has been running. You can:
 
-> Closing a cycle is reversible only by an admin via the API. Treat it as
-> final.
+- **Edit name & colour** inline.
+- **Close cycle & freeze snapshot** — freezes a snapshot of every On-Radar
+  technology and starts a new baseline for the next cycle. Confirm when asked.
+- **Preview delta vs last cycle** — a summary of what changed (once a previous
+  closed cycle exists).
 
-## Deliverables
+## Closed cycles
 
-Each cycle exposes downloadable deliverables — for example a JSON snapshot
-of the radar and a generated summary brief. These are produced on demand
-when first requested.
+Each closed cycle stays viewable and can be re-themed:
+
+- **View on radar** / **View as list** — open that historical snapshot.
+- **Edit name & colour**.
+- **Deliverables** — download the **Radar JSON**, **Summary Brief**, **Detailed
+  Report**, and **Delta Document**.

@@ -43,6 +43,7 @@ export function Layout({ children }: Props) {
     "Radar",
     ...(canViewList ? ["List"] : []),
     ...(isWriter ? ["Manage"] : []),
+    "Guide",
   ];
 
   return (

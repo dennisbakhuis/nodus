@@ -22,6 +22,8 @@ from app.models.topic_person_link import TopicPersonLink
 from app.schemas.peer_reference import PeerReferenceSummary
 from app.schemas.person import PersonReadPublic
 from app.schemas.radar import RadarSnapshotResponse
+from app.services.grouping import ancestor_path as group_ancestor_path
+from app.services.grouping import build_parent_map
 from app.services.ring_movement import RingMovement
 from app.services.visibility import apply_field_visibility, load_visibility_config
 from app.time_utils import now_utc
@@ -257,6 +259,33 @@ def radar_current(
     movement_by_tech = _bulk_derive_ring_movement(session, tech_ids, cycle.id)
     visibility_config = load_visibility_config(session) if not _is_admin(user) else None
 
+    # ------------------------------------------------------------------
+    # Grouping hierarchy. Build the parent map once; under a public-only
+    # view restrict ancestor chains to publicly-visible topics so a private
+    # umbrella above a public child is collapsed out of the breadcrumb/path.
+    # ------------------------------------------------------------------
+    parent_map = build_parent_map(session)
+    keep_group_ids: set[Any] | None = None
+    if is_public_only(user):
+        keep_group_ids = {
+            tid
+            for tid, private in session.exec(
+                select(Topic.id, Topic.not_for_external_publication)
+            ).all()
+            if not private
+        }
+
+    def _grouping_for(topic_id: Any) -> tuple[str | None, list[str], str]:
+        raw_parent = parent_map.get(topic_id)
+        path = group_ancestor_path(parent_map, topic_id, keep=keep_group_ids)
+        root = path[0] if path else topic_id
+        parent_out = (
+            str(raw_parent)
+            if raw_parent is not None and (keep_group_ids is None or raw_parent in keep_group_ids)
+            else None
+        )
+        return parent_out, [str(x) for x in path], str(root)
+
     entries: list[dict[str, Any]] = []
     for tech in technologies:
         topic = topics_by_id.get(tech.topic_id)
@@ -345,6 +374,10 @@ def radar_current(
             "movement": movement_by_tech.get(tech.id, RingMovement.NoChange).value,
             "not_for_external_publication": topic.not_for_external_publication,
         }
+        group_parent, group_path, group_root = _grouping_for(topic.id)
+        entry["parent_topic_id"] = group_parent
+        entry["ancestor_path"] = group_path
+        entry["root_group_id"] = group_root
         entries.append(apply_field_visibility(entry, session, user, config=visibility_config))
 
     # Candidate topics: topics that exist in the registry but have no
@@ -386,6 +419,10 @@ def radar_current(
                 "movement": None,
                 "not_for_external_publication": topic.not_for_external_publication,
             }
+            group_parent, group_path, group_root = _grouping_for(topic.id)
+            entry["parent_topic_id"] = group_parent
+            entry["ancestor_path"] = group_path
+            entry["root_group_id"] = group_root
             entries.append(apply_field_visibility(entry, session, user, config=visibility_config))
 
     segments_list = [
