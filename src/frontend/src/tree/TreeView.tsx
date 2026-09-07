@@ -8,7 +8,13 @@
  * state that drives the group transform.
  */
 
-import { useImperativeHandle, type Ref } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  type Ref,
+} from "react";
 import { RELATION_STROKES } from "../radar/encodings";
 import { themeByKey } from "../radar/segmentThemes";
 import type { RadarData } from "../radar/types";
@@ -27,11 +33,26 @@ type Props = {
   controlsRef?: Ref<TreeViewControls | null>;
 };
 
+/** How long a single click waits to see whether it is really a double click. */
+const DOUBLE_CLICK_GRACE_MS = 220;
+
 const STROKE_BY_KIND = {
   drives: RELATION_STROKES.drives,
   hinders: RELATION_STROKES.hinders,
   relates: RELATION_STROKES.relates_to,
 };
+
+/** Keep a caption inside its column so neighbouring labels cannot collide. */
+const MAX_LABEL_CHARS = 26;
+
+/** Half-width of a node's clickable area, sized to cover a truncated caption. */
+const HIT_HALF_W = 95;
+
+function truncateLabel(name: string): string {
+  return name.length > MAX_LABEL_CHARS
+    ? `${name.slice(0, MAX_LABEL_CHARS - 1)}…`
+    : name;
+}
 
 function nodeFill(node: PositionedNode, data: RadarData): string {
   if (!node.entry) return "transparent";
@@ -54,6 +75,39 @@ export function TreeView({
     usePanZoom({ fitKey, onZoomChange });
 
   useImperativeHandle(controlsRef, () => controls, [controls]);
+
+  // Selecting opens a panel with a full-screen overlay, which would swallow the
+  // second half of a double-click and make re-anchoring impossible. Hold the
+  // single-click action back long enough to see whether a double-click follows.
+  const clickTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (clickTimer.current !== null) window.clearTimeout(clickTimer.current);
+    },
+    [],
+  );
+
+  const handleClick = useCallback(
+    (node: PositionedNode) => {
+      if (clickTimer.current !== null) return;
+      clickTimer.current = window.setTimeout(() => {
+        clickTimer.current = null;
+        onSelect(node);
+      }, DOUBLE_CLICK_GRACE_MS);
+    },
+    [onSelect],
+  );
+
+  const handleDoubleClick = useCallback(
+    (node: PositionedNode) => {
+      if (clickTimer.current !== null) {
+        window.clearTimeout(clickTimer.current);
+        clickTimer.current = null;
+      }
+      onAnchor(node);
+    },
+    [onAnchor],
+  );
 
   return (
     <div
@@ -134,8 +188,8 @@ export function TreeView({
                 fill={nodeFill(node, data)}
                 selected={node.topicId === selectedTopicId}
                 anchored={node.topicId === anchorTopicId}
-                onSelect={onSelect}
-                onAnchor={onAnchor}
+                onSelect={handleClick}
+                onAnchor={handleDoubleClick}
               />
             ))}
           </g>
@@ -216,6 +270,18 @@ function TreeNodeMark({
         }
       }}
     >
+      {/* A <g> has no geometry of its own, so the gap between the mark and the
+          caption below it is not hit-testable. This invisible target makes the
+          whole node — mark, gap and label — behave as one control. */}
+      <rect
+        x={-HIT_HALF_W}
+        y={-(mark.outerRadius ?? mark.radius) - 4}
+        width={HIT_HALF_W * 2}
+        height={(mark.outerRadius ?? mark.radius) + 28}
+        fill="transparent"
+        pointerEvents="all"
+      />
+
       {anchored && (
         <circle
           r={mark.radius + 7}
@@ -263,9 +329,13 @@ function TreeNodeMark({
         />
       )}
 
+      {/* Below the mark, not beside it: links run horizontally at mark height,
+          so a caption alongside a node is guaranteed to be struck through by
+          that node's own edges. */}
       <text
-        x={mark.outerRadius !== null ? mark.outerRadius + 6 : mark.radius + 6}
-        y={4}
+        x={0}
+        y={(mark.outerRadius ?? mark.radius) + 16}
+        textAnchor="middle"
         fontSize={12}
         fontWeight={
           mark.bold ? "var(--font-weight-bold)" : "var(--font-weight-medium)"
@@ -280,7 +350,8 @@ function TreeNodeMark({
           letterSpacing: node.kind === "labelGroup" ? "0.04em" : "normal",
         }}
       >
-        {node.name}
+        <title>{node.name}</title>
+        {truncateLabel(node.name)}
       </text>
     </g>
   );

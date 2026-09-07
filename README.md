@@ -30,6 +30,8 @@ Nodus is for teams who have outgrown a spreadsheet of "things we're watching" bu
 - **Honest about cycles** — technologies can genuinely depend on each other, so a link that closes a loop or skips a level is drawn as a faint dashed back edge rather than quietly hidden
 - **Shareable** — mode, anchor, depth and every filter live in the URL, so a copied link reopens exactly what you were looking at
 
+![Tree view — dependency lineage](assets/screenshots/tree-dependencies.png)
+
 ### Catalog management
 - **Topics, Technologies, Factsheets, Assessments** as a v2 data model with strict FK enforcement
 - **Aliases** with case- and punctuation-insensitive matching for de-duplication

@@ -23,7 +23,10 @@ import type { GroupNode, TreeNodeKind } from "./groupForest";
 import type { CanonicalEdge, EdgeKind, LineageNode } from "./dependencyGraph";
 import { depthHeaderLabel, levelHeaderLabel } from "./treeEncodings";
 
-export const ROW_H = 30;
+// Labels sit below their node rather than beside it, so rows need room for a
+// mark plus a caption. Edges travel horizontally at mark height, which is what
+// keeps them from running through the text.
+export const ROW_H = 46;
 export const COLUMN_W = 230;
 
 export type PositionedNode = {
@@ -147,12 +150,11 @@ export function layoutGroupTree(
     });
   }
 
-  const depths = [...new Set(nodes.map((n) => n.level))].sort((a, b) => a - b);
-  const columns = depths.map<ColumnHeader>((depth) => ({
-    level: depth,
-    x: depth * COLUMN_W,
-    label: depthHeaderLabel(depth),
-  }));
+  // Take each column's x from a node that landed in it rather than recomputing
+  // it from the depth: the forest is laid out under a synthetic root, so d3
+  // places depth 0 one column in, and deriving the header independently would
+  // offset every caption by one column.
+  const columns = columnsFrom(nodes, depthHeaderLabel);
 
   return { nodes, links, columns, ...extent(nodes) };
 }
@@ -251,15 +253,26 @@ export function layoutLineage(
     });
   }
 
-  const columns = [...buckets.keys()]
-    .sort((a, b) => b - a)
-    .map<ColumnHeader>((level) => ({
-      level,
-      x: xForLevel(level),
-      label: levelHeaderLabel(level),
-    }));
+  const columns = columnsFrom(nodes, levelHeaderLabel, (a, b) => b - a);
 
   return { nodes, links, columns, ...extent(nodes) };
+}
+
+/**
+ * One header per occupied level, positioned on the nodes actually placed there.
+ */
+function columnsFrom(
+  nodes: PositionedNode[],
+  label: (level: number) => string,
+  order: (a: number, b: number) => number = (a, b) => a - b,
+): ColumnHeader[] {
+  const xByLevel = new Map<number, number>();
+  for (const node of nodes) {
+    if (!xByLevel.has(node.level)) xByLevel.set(node.level, node.x);
+  }
+  return [...xByLevel.entries()]
+    .sort((a, b) => order(a[0], b[0]))
+    .map(([level, x]) => ({ level, x, label: label(level) }));
 }
 
 function barycentre(

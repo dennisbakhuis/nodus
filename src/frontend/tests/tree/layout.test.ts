@@ -106,6 +106,18 @@ describe("layoutGroupTree", () => {
     expect(columns.map((c) => c.label)).toEqual(["LEVEL 1", "LEVEL 2"]);
   });
 
+  // The forest is laid out under a synthetic root, so d3 puts depth 0 one
+  // column in. Deriving header positions from the depth instead of from the
+  // placed nodes offset every caption by a whole column.
+  it("positions each column header on the nodes in it", () => {
+    const { nodes, columns } = layoutGroupTree(forest, expanded, NO_FILTER);
+    for (const column of columns) {
+      const inColumn = nodes.filter((n) => n.level === column.level);
+      expect(inColumn.length).toBeGreaterThan(0);
+      for (const node of inColumn) expect(node.x).toBe(column.x);
+    }
+  });
+
   it("handles an empty forest", () => {
     const { nodes, links, width } = layoutGroupTree([], new Set(), NO_FILTER);
     expect(nodes).toEqual([]);
@@ -150,6 +162,20 @@ describe("layoutLineage", () => {
       "DOWNSTREAM · LEVEL -1",
     ]);
     expect(columns[0]!.x).toBeLessThan(columns[2]!.x);
+  });
+
+  it("positions each column header on the nodes in it", () => {
+    const { nodes, columns } = layoutLineage(
+      lineage.nodes,
+      lineage.links,
+      resolver(),
+      NO_FILTER,
+    );
+    for (const column of columns) {
+      const inColumn = nodes.filter((n) => n.level === column.level);
+      expect(inColumn.length).toBeGreaterThan(0);
+      for (const node of inColumn) expect(node.x).toBe(column.x);
+    }
   });
 
   it("positions upstream nodes left of the anchor", () => {
