@@ -42,8 +42,10 @@ test.describe("Radar centering", () => {
       await page.setViewportSize(size);
       await page.goto("/radar");
       await page
-      .waitForSelector('svg[aria-label="Radar arc view"] g', { timeout: 15_000 })
-      .catch(() => {});
+        .waitForSelector('svg[aria-label="Radar arc view"] g', {
+          timeout: 15_000,
+        })
+        .catch(() => {});
       await page.waitForTimeout(900);
 
       const m = await measure(page);
@@ -69,7 +71,9 @@ test.describe("Radar centering", () => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/radar");
     await page
-      .waitForSelector('svg[aria-label="Radar arc view"] g', { timeout: 15_000 })
+      .waitForSelector('svg[aria-label="Radar arc view"] g', {
+        timeout: 15_000,
+      })
       .catch(() => {});
     await page.waitForTimeout(900);
 
@@ -93,7 +97,9 @@ test.describe("Radar centering", () => {
     await page.setViewportSize({ width: 2400, height: 1300 });
     await page.goto("/radar");
     await page
-      .waitForSelector('svg[aria-label="Radar arc view"] g', { timeout: 15_000 })
+      .waitForSelector('svg[aria-label="Radar arc view"] g', {
+        timeout: 15_000,
+      })
       .catch(() => {});
     await page.waitForTimeout(900);
 
@@ -118,8 +124,8 @@ test.describe("Radar centering", () => {
 
     // A 120px drag must move the content 120px — under the old maths it moved
     // 120 * viewBoxScale, which at this width was ~2x too far.
-    expect(Math.abs(after.contentCentre - before.contentCentre - 120)).toBeLessThan(
-      6,
-    );
+    expect(
+      Math.abs(after.contentCentre - before.contentCentre - 120),
+    ).toBeLessThan(6);
   });
 });

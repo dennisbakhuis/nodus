@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { signIn } from "./support/session";
 
 /**
  * Runs against whatever the dev database holds, so assertions about specific
@@ -9,42 +10,8 @@ import { test, expect, type Page } from "@playwright/test";
  * callers, so each test signs in as the seeded demo reader first. Requires
  * `make seed` (which seeds demo users when NODUS_ENV is dev or test).
  */
-const API = "http://127.0.0.1:8000/api";
-
-async function signInAsReader(page: Page): Promise<boolean> {
-  const res = await page.request
-    .post(`${API}/auth/login`, {
-      data: { username: "demo_reader", password: "demo" },
-    })
-    .catch(() => null);
-  if (!res || !res.ok()) return false;
-  const body = (await res.json()) as { token?: string };
-  if (!body.token) return false;
-
-  // A freshly seeded demo account has an incomplete People profile, and the
-  // completion modal is deliberately undismissable — it would sit over the
-  // canvas and swallow every click. Fill it in over the API instead.
-  await page.request
-    .patch(`${API}/auth/me/profile`, {
-      headers: { Authorization: `Bearer ${body.token}` },
-      data: {
-        full_name: "Demo Reader",
-        company: "Nodus",
-        email: "demo.reader@example.test",
-        department: "Scouting",
-        role: "Reader",
-      },
-    })
-    .catch(() => null);
-
-  await page.addInitScript((token: string) => {
-    window.localStorage.setItem("nodus.auth.token", token);
-  }, body.token);
-  return true;
-}
-
 async function openTree(page: Page, path = "/tree"): Promise<boolean> {
-  if (!(await signInAsReader(page))) return false;
+  if (!(await signIn(page))) return false;
   await page.goto(path);
   await page.waitForLoadState("networkidle");
   // The capability guard redirects to /radar when the session lacks access.
@@ -63,9 +30,9 @@ test.describe("Tree E2E", () => {
 
     // The seeded dataset has both pure umbrellas and technologies that are
     // themselves parents, so both marks must appear.
-    expect(await page.locator("[data-kind='labelGroup']").count()).toBeGreaterThan(
-      0,
-    );
+    expect(
+      await page.locator("[data-kind='labelGroup']").count(),
+    ).toBeGreaterThan(0);
     expect(
       await page.locator("[data-kind='technologyGroup']").count(),
     ).toBeGreaterThan(0);
@@ -74,7 +41,10 @@ test.describe("Tree E2E", () => {
   test("dependency mode asks for an anchor and keeps mode in the URL", async ({
     page,
   }) => {
-    test.skip(!(await openTree(page, "/tree?mode=deps")), "demo reader unavailable");
+    test.skip(
+      !(await openTree(page, "/tree?mode=deps")),
+      "demo reader unavailable",
+    );
 
     await expect(page.getByText(/Pick an anchor technology/)).toBeVisible({
       timeout: 10_000,
@@ -92,7 +62,9 @@ test.describe("Tree E2E", () => {
     test.skip((await parent.count()) === 0, "no technology group seeded");
 
     await parent.dblclick();
-    await expect(page.getByText("ANCHOR", { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("ANCHOR", { exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
     expect(page.url()).toContain("anchor=");
     // A technology group that is also a relation source has downstream nodes.
     await expect(page.getByText(/DOWNSTREAM · LEVEL -1/)).toBeVisible({
@@ -110,11 +82,15 @@ test.describe("Tree E2E", () => {
     test.skip((await parent.count()) === 0, "no technology group seeded");
 
     await parent.dblclick();
-    await expect(page.getByText("ANCHOR", { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("ANCHOR", { exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
     const anchored = page.url();
 
     await page.reload();
-    await expect(page.getByText("ANCHOR", { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("ANCHOR", { exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
     expect(page.url()).toBe(anchored);
   });
 });
