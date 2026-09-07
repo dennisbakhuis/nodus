@@ -59,9 +59,7 @@ const TREE_LINE = "var(--color-ring-boundary)";
 /** A full-height vertical guide line (ancestor column that continues below). */
 function TreeVertical({ show }: { show: boolean }) {
   return (
-    <div
-      style={{ position: "relative", width: TREE_CELL_W, flex: "0 0 auto" }}
-    >
+    <div style={{ position: "relative", width: TREE_CELL_W, flex: "0 0 auto" }}>
       {show && (
         <div
           style={{
@@ -80,9 +78,7 @@ function TreeVertical({ show }: { show: boolean }) {
 /** The ├─ (tee) or └─ (corner) connector joining a node to its parent. */
 function TreeElbow({ last, color }: { last: boolean; color: string }) {
   return (
-    <div
-      style={{ position: "relative", width: TREE_CELL_W, flex: "0 0 auto" }}
-    >
+    <div style={{ position: "relative", width: TREE_CELL_W, flex: "0 0 auto" }}>
       {/* vertical from the top down to the middle (always) */}
       <div
         style={{
@@ -160,7 +156,7 @@ function timeRangeLabel(sel: string[]): string {
 }
 
 type Props = {
-  variant?: "radar" | "list";
+  variant?: "radar" | "list" | "tree";
   showZoom?: boolean;
   zoom?: number;
   fitZoom?: number;
@@ -180,6 +176,15 @@ type Props = {
   onSegmentsChanged?: () => void;
   /** When provided, render a collapse control that hides the sidebar (radar only). */
   onCollapse?: () => void;
+  /* --- Tree view only. Mode, depth and anchor are view state rather than
+     filter predicates, so they stay out of FilterState — the same way
+     colorMode and shapeMode already do. --- */
+  treeMode?: "groups" | "deps";
+  onTreeModeChange?: (mode: "groups" | "deps") => void;
+  treeDepth?: 1 | 2 | 3;
+  onTreeDepthChange?: (depth: 1 | 2 | 3) => void;
+  anchorName?: string | null;
+  onAnchorClear?: () => void;
 };
 
 const ZOOM_STEP_PERCENT = 10;
@@ -204,8 +209,19 @@ export function Sidebar({
   onShapeModeChange,
   onSegmentsChanged,
   onCollapse,
+  treeMode = "groups",
+  onTreeModeChange,
+  treeDepth = 2,
+  onTreeDepthChange,
+  anchorName = null,
+  onAnchorClear,
 }: Props) {
   const isList = variant === "list";
+  const isTree = variant === "tree";
+  // Registry-scoped filters make sense wherever the whole registry is on
+  // screen, which is both the list and the tree — but not the radar, where
+  // only On Radar entries are ever plotted.
+  const showRegistryFilters = isList || isTree;
   const { isAdmin, isWriter } = useAuth();
   const readOnly = useReadOnlyRadar();
   const { width, onPointerDown, reset } = useResizableWidth(
@@ -286,9 +302,7 @@ export function Sidebar({
         <div
           onMouseEnter={() => setHoveredGroupId(node.topic_id)}
           onMouseLeave={() =>
-            setHoveredGroupId((cur) =>
-              cur === node.topic_id ? null : cur,
-            )
+            setHoveredGroupId((cur) => (cur === node.topic_id ? null : cur))
           }
           style={{
             display: "flex",
@@ -305,7 +319,11 @@ export function Sidebar({
           <button
             type="button"
             aria-label={
-              hasChildren ? (expanded ? "Collapse group" : "Expand group") : undefined
+              hasChildren
+                ? expanded
+                  ? "Collapse group"
+                  : "Expand group"
+                : undefined
             }
             disabled={!hasChildren}
             onClick={() => hasChildren && toggleGroupExpanded(node.topic_id)}
@@ -380,9 +398,13 @@ export function Sidebar({
     );
   }
   const showColorPicker =
-    !isList && colorMode !== undefined && onColorModeChange !== undefined;
+    variant === "radar" &&
+    colorMode !== undefined &&
+    onColorModeChange !== undefined;
   const showShapePicker =
-    !isList && shapeMode !== undefined && onShapeModeChange !== undefined;
+    variant === "radar" &&
+    shapeMode !== undefined &&
+    onShapeModeChange !== undefined;
   const sorted = [...data.segments].sort((a, b) => a.order - b.order);
 
   function toggleRing(name: RingName) {
@@ -471,7 +493,7 @@ export function Sidebar({
       hasPeerRefs: null,
       timeToMainstream: [],
       personIds: [],
-      visibility: isList && isWriter ? "public" : "all",
+      visibility: showRegistryFilters && isWriter ? "public" : "all",
       groupId: null,
     });
     onSearchChange("");
@@ -489,7 +511,7 @@ export function Sidebar({
     onFiltersChange({ ...filters, personIds: next });
   }
 
-  const defaultVisibility = isList && isWriter ? "public" : "all";
+  const defaultVisibility = showRegistryFilters && isWriter ? "public" : "all";
   const hasFilters =
     filters.segments.length > 0 ||
     filters.rings.length > 0 ||
@@ -501,10 +523,10 @@ export function Sidebar({
     filters.hasPeerRefs !== null ||
     filters.timeToMainstream.length > 0 ||
     (filters.personIds?.length ?? 0) > 0 ||
-    (isList &&
+    (showRegistryFilters &&
       (filters.registryStatuses.length !== 1 ||
         filters.registryStatuses[0] !== "On Radar")) ||
-    (isList && filters.visibility !== defaultVisibility) ||
+    (showRegistryFilters && filters.visibility !== defaultVisibility) ||
     (showColorPicker && colorMode !== "segment") ||
     (showShapePicker && shapeMode !== "dot") ||
     filters.groupId != null ||
@@ -602,9 +624,93 @@ export function Sidebar({
         />
 
         <Hr />
-        <FiltersHeader
-          onReset={hasFilters ? clearAll : undefined}
-        />
+        <FiltersHeader onReset={hasFilters ? clearAll : undefined} />
+
+        {isTree && (
+          <>
+            <SectionHeader
+              label="Hierarchy"
+              resetLabel="Reset hierarchy mode"
+            />
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "var(--space-1)",
+              }}
+            >
+              <Chip
+                active={treeMode === "groups"}
+                onClick={() => onTreeModeChange?.("groups")}
+                label="Groups"
+              />
+              <Chip
+                active={treeMode === "deps"}
+                onClick={() => onTreeModeChange?.("deps")}
+                label="Dependencies"
+              />
+            </div>
+
+            {treeMode === "deps" && (
+              <>
+                <SectionHeader label="Depth" resetLabel="Reset depth" />
+                <div style={{ display: "flex", gap: "var(--space-1)" }}>
+                  {[1, 2, 3].map((level) => {
+                    const levelColor = groupDepthColor(level - 1);
+                    const levelActive = treeDepth === level;
+                    return (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => onTreeDepthChange?.(level as 1 | 2 | 3)}
+                        aria-label={`Depth plus or minus ${level}`}
+                        aria-pressed={levelActive}
+                        title={`Trace ${level} level(s) each way`}
+                        style={{
+                          width: 18,
+                          height: 18,
+                          padding: 0,
+                          border: `1px solid ${levelColor}`,
+                          borderRadius: 4,
+                          background: levelActive
+                            ? levelColor
+                            : "var(--color-white)",
+                          color: levelActive
+                            ? "var(--color-white)"
+                            : levelColor,
+                          fontSize: 10,
+                          fontWeight: "var(--font-weight-bold)",
+                          lineHeight: 1,
+                          cursor: "pointer",
+                          fontFamily: "var(--font-family)",
+                        }}
+                      >
+                        {level}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <SectionHeader
+                  label="Anchor"
+                  onReset={anchorName ? onAnchorClear : undefined}
+                  resetLabel="Clear anchor"
+                />
+                <div
+                  style={{
+                    fontSize: "var(--font-size-xs)",
+                    color: anchorName
+                      ? "var(--color-dark-text)"
+                      : "var(--color-muted-text)",
+                    padding: "2px 0",
+                  }}
+                >
+                  {anchorName ?? "Search above to pick one"}
+                </div>
+              </>
+            )}
+          </>
+        )}
 
         {showColorPicker && (
           <>
@@ -667,7 +773,7 @@ export function Sidebar({
           </>
         )}
 
-        {isList && (
+        {showRegistryFilters && (
           <>
             {/* ── Registry Status (first list filter — no divider directly
                  under the Filters label) ── */}
@@ -704,8 +810,8 @@ export function Sidebar({
           </>
         )}
 
-        {/* Writer-only visibility filter — list view only. */}
-        {isList && isWriter && (
+        {/* Writer-only visibility filter — list and tree. */}
+        {showRegistryFilters && isWriter && (
           <>
             <Hr />
             <SectionHeader
@@ -874,10 +980,10 @@ export function Sidebar({
           onClear={() => onFiltersChange({ ...filters, personIds: [] })}
         />
 
-        {isList && (
+        {showRegistryFilters && (
           <>
             <Hr />
-            {/* ── Data completeness (tri-state toggles) — list only ── */}
+            {/* ── Data completeness (tri-state toggles) ── */}
             <SectionHeader
               label="Completeness"
               onReset={
@@ -994,9 +1100,7 @@ export function Sidebar({
                         background: levelActive
                           ? levelColor
                           : "var(--color-white)",
-                        color: levelActive
-                          ? "var(--color-white)"
-                          : levelColor,
+                        color: levelActive ? "var(--color-white)" : levelColor,
                         fontSize: 10,
                         fontWeight: "var(--font-weight-bold)",
                         lineHeight: 1,
@@ -1137,7 +1241,9 @@ function FiltersHeader({ onReset }: { onReset?: () => void }) {
       >
         Filters
       </span>
-      {onReset && <ResetButton onClick={onReset} aria-label="Reset all filters" />}
+      {onReset && (
+        <ResetButton onClick={onReset} aria-label="Reset all filters" />
+      )}
     </div>
   );
 }

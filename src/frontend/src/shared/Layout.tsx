@@ -41,7 +41,7 @@ export function Layout({ children }: Props) {
   const showDemoBtn = !!demoTarget && !reducedMotion && isAuthenticated;
   const navItems = [
     "Radar",
-    ...(canViewList ? ["List"] : []),
+    ...(canViewList ? ["List", "Tree"] : []),
     ...(isWriter ? ["Manage"] : []),
     "Guide",
   ];

@@ -147,18 +147,19 @@ references. The radar shows the decision; the factsheet shows the evidence.
 
 ## Getting around Nodus
 
-Nodus has four workspaces, reached from the tabs in the top bar. On every page the
+Nodus has five workspaces, reached from the tabs in the top bar. On every page the
 **Help** button explains what you're looking at, and this **Guide** is the bigger
 picture.
 
-### The four workspaces
+### The five workspaces
 
 - **Radar** — the picture: technologies plotted by segment and ring.
 - **List** — the same data as a sortable, filterable table (the registry).
+- **Tree** — how technologies relate to one another, as a hierarchy.
 - **Manage** — where writers and admins configure everything.
 - **Guide** — this handbook.
 
-The **List** and **Manage** tabs appear only if your role allows them.
+The **List**, **Tree** and **Manage** tabs appear only if your role allows them.
 
 ### Opening a technology
 
@@ -190,8 +191,8 @@ the system — even through the API.
 ### What each role can reach
 
 The same page controls two **capabilities**: whether a role can open the **List**
-view and whether it can switch to **historical cycles**. The radar itself is
-always available.
+and **Tree** views and whether it can switch to **historical cycles**. The radar
+itself is always available.
 
 ### Accounts and sign-in
 
@@ -200,10 +201,10 @@ passwords, and deactivate or delete accounts. Where single sign-on (Entra) is
 enabled, those users are provisioned and role-synced automatically from their
 group membership.
 
-## Exploring the radar and list
+## Exploring the radar, list and tree
 
-The radar and the list are two views of the same data — a picture for
-communicating, a table for working.
+The radar, the list and the tree are three views of the same data — a picture for
+communicating, a table for working, and a structure for seeing how things connect.
 
 ### Reading the radar
 
@@ -242,6 +243,35 @@ a review on what actually changed.
 The **List** shows the same technologies as a table you can sort, filter by
 registry status, visibility, and completeness, **group by family**, select rows,
 and export. It's the fastest way to scan or bulk-review many technologies.
+
+### The tree view
+
+The **Tree** answers a question neither of the other views can: how technologies
+relate to each other. Nodus records two different kinds of connection, and the
+**Hierarchy** switch in the sidebar chooses between them.
+
+**Groups** draws the *is a kind of* hierarchy curated under **Manage ▸ Groups**,
+and distinguishes its three kinds of node. A **label group** is a hollow dashed
+square — an umbrella such as *Artificial Intelligence* with no technology behind
+it, so it never appears on the radar. A **technology group** is a dot inside a
+ring — a real technology that also has children, so it is both a dot and a
+parent. A plain dot is a leaf **technology**.
+
+**Dependencies** draws the *influences* graph — `drives`, `hinders`,
+`relates to`. Choose an **anchor** and the tree traces its lineage: prerequisites
+fan out to the left as `LEVEL +1`, `+2`, and what depends on it fans out to the
+right as `LEVEL -1`, `-2`. **Depth** sets how far. Double-click any node to
+re-anchor on it; a single click opens the detail panel instead.
+
+Relations can form loops — two technologies can genuinely depend on each other —
+so a connection that closes a cycle or skips a level is drawn as a faint dashed
+link without an arrowhead rather than being hidden.
+
+> **In Nodus** — filtering means something slightly different in each mode. In
+> **Groups** it narrows what is highlighted, keeping the branches that lead to a
+> match so nothing is orphaned from its family. In **Dependencies** it narrows
+> what the lineage may pass through, because a filtered-out technology's
+> dependencies are not the anchor's dependencies.
 
 ## Curating technologies
 
