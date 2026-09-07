@@ -24,6 +24,14 @@ export type DemoAccount = "demo_reader" | "demo_writer" | "demo_admin";
  * The token is returned as well as stored because it is needed for API calls
  * made before any page has loaded, when `localStorage` is not yet reachable.
  */
+/** "demo_admin" -> "Demo Admin", so a spec does not rename the account it signs in as. */
+function displayName(username: DemoAccount): string {
+  return username
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export async function signIn(
   page: Page,
   username: DemoAccount = "demo_reader",
@@ -46,7 +54,7 @@ export async function signIn(
     .patch(`${API_BASE}/auth/me/profile`, {
       headers: { Authorization: `Bearer ${body.token}` },
       data: {
-        full_name: "Demo Reader",
+        full_name: displayName(username),
         company: "Nodus",
         email: `${username}@example.test`,
         department: "Scouting",
