@@ -23,3 +23,48 @@ export function relationStroke(type: string) {
     ? RELATION_STROKES[cat]
     : { color: "var(--color-muted-text)", dash: "4,3", label: type };
 }
+
+/**
+ * Direction-aware relation labelling.
+ *
+ * The five stored relation types collapse into five display buckets once the
+ * edge direction relative to the current topic is known: an incoming `drives`
+ * edge reads as "Driven By" from the other side. Extracted from TopicView so
+ * the tree view labels edges identically to the detail panel.
+ */
+
+export type RelationGroupKey =
+  | "Drives"
+  | "Driven By"
+  | "Relates To"
+  | "Hinders"
+  | "Hindered By";
+
+export const RELATION_GROUP_ORDER: RelationGroupKey[] = [
+  "Drives",
+  "Driven By",
+  "Relates To",
+  "Hinders",
+  "Hindered By",
+];
+
+export const RELATION_GROUP_COLORS: Record<RelationGroupKey, string> = {
+  Drives: "var(--color-brand-dark-blue)",
+  "Driven By": "var(--color-brand-dark-blue)",
+  "Relates To": "var(--color-brand-orange)",
+  Hinders: "#c0392b",
+  "Hindered By": "#c0392b",
+};
+
+export function relationGroupLabel(
+  relationType: string,
+  isOutgoing: boolean,
+): RelationGroupKey | string {
+  const t = relationType.toLowerCase().replace(/[_\s]/g, "");
+  if (t === "drives") return isOutgoing ? "Drives" : "Driven By";
+  if (t === "drivenby") return isOutgoing ? "Driven By" : "Drives";
+  if (t === "hinders") return isOutgoing ? "Hinders" : "Hindered By";
+  if (t === "hinderedby") return isOutgoing ? "Hindered By" : "Hinders";
+  if (t === "relatesto") return "Relates To";
+  return relationType;
+}

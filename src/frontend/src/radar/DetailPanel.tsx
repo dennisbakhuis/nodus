@@ -17,6 +17,13 @@ type Props = {
   onNavigate: (entry: RadarEntry) => void;
   onExpand?: () => void;
   disabled?: boolean;
+  /**
+   * Route prefix this panel writes into the address bar when an entry is
+   * selected. Defaults to the radar so existing callers are unaffected; other
+   * surfaces pass their own so selecting a node does not navigate the URL away
+   * from the page the user is actually on.
+   */
+  basePath?: string;
 };
 
 type MovementEvent = {
@@ -43,6 +50,7 @@ export function DetailPanel({
   onNavigate,
   onExpand,
   disabled = false,
+  basePath = "/radar",
 }: Props) {
   const { canOpenFullTopicModal: canExpand } = useAuth();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -54,7 +62,7 @@ export function DetailPanel({
 
   useEffect(() => {
     if (!entry) return;
-    window.history.replaceState({}, "", `/radar/${entry.slug}`);
+    window.history.replaceState({}, "", `${basePath}/${entry.slug}`);
     setLoading(true);
     setDetail(null);
     setMovements([]);
@@ -81,7 +89,7 @@ export function DetailPanel({
         setDetail(null);
       })
       .finally(() => setLoading(false));
-  }, [entry]);
+  }, [entry, basePath]);
 
   useEffect(() => {
     if (entry) {
