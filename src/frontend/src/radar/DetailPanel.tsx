@@ -18,11 +18,14 @@ type Props = {
   onExpand?: () => void;
   disabled?: boolean;
   /**
-   * Route prefix this panel writes into the address bar when an entry is
-   * selected. Defaults to the radar so existing callers are unaffected; other
-   * surfaces pass their own so selecting a node does not navigate the URL away
-   * from the page the user is actually on.
+   * Whether selecting an entry rewrites the address bar to `<basePath>/<slug>`.
+   *
+   * The rewrite replaces the entire URL, query string included, so any surface
+   * that keeps its own view state in search params must opt out and own its
+   * URL itself rather than have it silently discarded here.
    */
+  syncUrl?: boolean;
+  /** Route prefix used when `syncUrl` is on. */
   basePath?: string;
 };
 
@@ -50,6 +53,7 @@ export function DetailPanel({
   onNavigate,
   onExpand,
   disabled = false,
+  syncUrl = true,
   basePath = "/radar",
 }: Props) {
   const { canOpenFullTopicModal: canExpand } = useAuth();
@@ -62,7 +66,9 @@ export function DetailPanel({
 
   useEffect(() => {
     if (!entry) return;
-    window.history.replaceState({}, "", `${basePath}/${entry.slug}`);
+    if (syncUrl) {
+      window.history.replaceState({}, "", `${basePath}/${entry.slug}`);
+    }
     setLoading(true);
     setDetail(null);
     setMovements([]);
@@ -89,7 +95,7 @@ export function DetailPanel({
         setDetail(null);
       })
       .finally(() => setLoading(false));
-  }, [entry, basePath]);
+  }, [entry, syncUrl, basePath]);
 
   useEffect(() => {
     if (entry) {

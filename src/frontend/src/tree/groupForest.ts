@@ -29,6 +29,16 @@ import type { GroupTreeNode } from "../manage/types";
  */
 export type TreeNodeKind = "labelGroup" | "technologyGroup" | "technology";
 
+/**
+ * Hard stop for the forest recursion.
+ *
+ * `MAX_GROUP_DEPTH` on the backend is enforced when a parent is assigned, not
+ * as a stored invariant — a restored backup can carry deeper nesting. The cap
+ * is well clear of the five levels the API allows and keeps a malformed
+ * payload from recursing without bound.
+ */
+const MAX_RENDERED_DEPTH = 12;
+
 export type GroupNode = {
   topicId: string;
   name: string;
@@ -67,6 +77,7 @@ export function buildGroupForest(
   const seen = new Set<string>();
 
   function build(nodes: GroupTreeNode[], depth: number): GroupNode[] {
+    if (depth > MAX_RENDERED_DEPTH) return [];
     return nodes.map((node) => {
       seen.add(node.topic_id);
       const children = build(node.children ?? [], depth + 1);
