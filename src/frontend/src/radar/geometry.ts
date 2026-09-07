@@ -26,6 +26,86 @@ export const WHEEL_ZOOM_FACTOR = 1.08;
 export const WHEEL_ZOOM_NORMALIZE = 100;
 
 /**
+ * How the `viewBox` maps user units onto the container's CSS pixels.
+ *
+ * `scale` is CSS pixels per user unit; `originX`/`originY` are where user-space
+ * (0, 0) lands, measured in CSS pixels from the container's top-left. A user
+ * point `u` therefore appears at `origin + scale * u`.
+ */
+export type ViewBoxMapping = {
+  scale: number;
+  originX: number;
+  originY: number;
+};
+
+/**
+ * Derive the viewBox mapping from measured rectangles.
+ *
+ * Assumes the default ``preserveAspectRatio="xMidYMid meet"``, under which the
+ * viewBox centre lands on the SVG element's centre and both axes share one
+ * scale. Returns ``null`` when either element has not been laid out yet.
+ */
+export function viewBoxMapping(
+  svgRect: { left: number; top: number; width: number; height: number },
+  containerRect: { left: number; top: number },
+): ViewBoxMapping | null {
+  const scale = Math.min(svgRect.width / SVG_W, svgRect.height / VB_H);
+  if (!Number.isFinite(scale) || scale <= 0) return null;
+  const centerX = svgRect.left - containerRect.left + svgRect.width / 2;
+  const centerY = svgRect.top - containerRect.top + svgRect.height / 2;
+  return {
+    scale,
+    originX: centerX - (SVG_W / 2) * scale,
+    originY: centerY - (VB_Y + VB_H / 2) * scale,
+  };
+}
+
+/**
+ * Convert a pan offset expressed in CSS pixels into the user units a CSS
+ * transform on SVG content actually applies.
+ *
+ * A `transform` on SVG content operates in the element's *user* coordinate
+ * system, so `translate(10px)` shifts by ten user units — which the viewBox
+ * then scales. The fit, wheel and drag maths all reason in CSS pixels, so the
+ * value has to be converted once, here, at the point it is applied.
+ *
+ * Screen position of a user point `u` is `origin + scale * (t_user + zoom * u)`.
+ * Setting that equal to the intended `t_css + zoom * (origin + scale * u)` and
+ * solving gives `t_user = (t_css + (zoom - 1) * origin) / scale`. The two agree
+ * only when `scale` is 1 and `origin` is 0, which is why the drift is invisible
+ * at the container width the layout constants were tuned against.
+ */
+export function cssPanToUserUnits(
+  translate: { x: number; y: number },
+  zoom: number,
+  mapping: ViewBoxMapping,
+): { x: number; y: number } {
+  return {
+    x: (translate.x + (zoom - 1) * mapping.originX) / mapping.scale,
+    y: (translate.y + (zoom - 1) * mapping.originY) / mapping.scale,
+  };
+}
+
+/**
+ * Where a user-space point lands on screen, in CSS pixels from the container's
+ * top-left, once `translate` (CSS pixels) and `zoom` have been applied.
+ *
+ * The inverse of the reasoning in `cssPanToUserUnits`, kept here so tests and
+ * callers can assert against one shared model of the mapping.
+ */
+export function projectUserPoint(
+  point: { x: number; y: number },
+  translate: { x: number; y: number },
+  zoom: number,
+  mapping: ViewBoxMapping,
+): { x: number; y: number } {
+  return {
+    x: translate.x + zoom * (mapping.originX + mapping.scale * point.x),
+    y: translate.y + zoom * (mapping.originY + mapping.scale * point.y),
+  };
+}
+
+/**
  * Shrink labels and dots while a single segment is focused so they don't
  * feel oversized after the focus transform has already scaled the slice up.
  */
