@@ -17,6 +17,14 @@ Shown at the bottom-centre of the radar half-circle. Choose:
 - **Custom** — upload your own (**PNG, JPEG, WebP, or SVG**, up to **512 KB**),
   stored inline. Use Replace / Remove; a preview is shown.
 
+## Group hierarchy
+
+**Maximum nesting depth** (1–12, default 8) caps how deep the group tree may
+go. The limit is checked when a parent is assigned, so lowering it leaves
+existing deeper branches alone and only blocks new ones. Twelve is a hard
+ceiling: past it the tree view runs out of distinct level colours and the
+layout stops being readable.
+
 ## Presentation mode
 
 A self-running tour for unattended displays. Enable it to show a **▶** button on

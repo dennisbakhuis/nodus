@@ -49,9 +49,13 @@ everything at once.
 ## Group filter
 
 If technologies are organised into groups, the **Group** filter shows them as a
-collapsible tree. It starts folded; the **1 / 2 / 3** buttons unfold it to that
-depth. Selecting a group highlights its members and dims the rest, like search.
-When no groups exist the section says so in grey.
+collapsible tree. It starts folded, and a control above it unfolds the whole
+tree to a chosen level — a numbered button per level while the hierarchy is six
+levels or shallower, a slider once it is deeper than that. Each level has its
+own colour, the same one it carries in the tree view.
+
+Selecting a group highlights its members and dims the rest, like search. When no
+groups exist the section says so in grey.
 
 ## Movements
 
