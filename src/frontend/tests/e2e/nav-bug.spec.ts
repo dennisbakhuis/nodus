@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { signIn } from "./support/session";
 
 // Regression for: PersonFilter's effect listed `selected` (its own state) in
 // the dep array and unconditionally `setSelected([])`'d when `selectedIds`
@@ -19,6 +20,11 @@ test.describe("Top nav navigation regression", () => {
         reactErrors.push(err.message);
       }
     });
+
+    // The List nav link only renders for a role with the canViewList
+    // capability, so an anonymous run never reaches the navigation this
+    // regression is about.
+    test.skip(!(await signIn(page)), "demo accounts unavailable");
 
     await page.goto("/radar");
     await page.waitForLoadState("networkidle");

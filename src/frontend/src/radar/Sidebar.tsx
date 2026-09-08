@@ -14,10 +14,16 @@ import { SearchBox } from "./SearchBox";
 import { themeByKey, SEGMENT_THEMES } from "./segmentThemes";
 import { useAuth } from "../shared/AuthContext";
 import { Chip as SharedChip } from "../shared/Chip";
+import { altKeyLabel } from "../shared/platform";
 import { CyclePicker } from "../shared/CyclePicker";
 import { NodusFooterLink } from "../shared/NodusFooterLink";
 import { ResizeHandle, useResizableWidth } from "../shared/useResizableWidth";
 import { useReadOnlyRadar } from "./ReadOnlyRadarContext";
+import { GroupDepthPicker } from "./GroupDepthPicker";
+// One ramp for the whole product. The sidebar used to keep a four-colour copy
+// of its own, so a level was one colour in the filter tree and another in the
+// tree view.
+import { groupDepthColor } from "../tree/treeEncodings";
 import { useConfirm } from "../shared/ConfirmDialog";
 import {
   createSegment,
@@ -45,13 +51,6 @@ function flattenGroupTree(
   return out;
 }
 
-/** Per-depth accent colours for the group tree (guide lines, disclosure). */
-const GROUP_DEPTH_COLORS = ["#2d8bc9", "#7c3aed", "#1b7b34", "#e08a00"];
-
-function groupDepthColor(depth: number): string {
-  return GROUP_DEPTH_COLORS[depth % GROUP_DEPTH_COLORS.length] as string;
-}
-
 const TREE_ROW_H = 24;
 const TREE_CELL_W = 18;
 const TREE_LINE = "var(--color-ring-boundary)";
@@ -59,9 +58,7 @@ const TREE_LINE = "var(--color-ring-boundary)";
 /** A full-height vertical guide line (ancestor column that continues below). */
 function TreeVertical({ show }: { show: boolean }) {
   return (
-    <div
-      style={{ position: "relative", width: TREE_CELL_W, flex: "0 0 auto" }}
-    >
+    <div style={{ position: "relative", width: TREE_CELL_W, flex: "0 0 auto" }}>
       {show && (
         <div
           style={{
@@ -80,9 +77,7 @@ function TreeVertical({ show }: { show: boolean }) {
 /** The ├─ (tee) or └─ (corner) connector joining a node to its parent. */
 function TreeElbow({ last, color }: { last: boolean; color: string }) {
   return (
-    <div
-      style={{ position: "relative", width: TREE_CELL_W, flex: "0 0 auto" }}
-    >
+    <div style={{ position: "relative", width: TREE_CELL_W, flex: "0 0 auto" }}>
       {/* vertical from the top down to the middle (always) */}
       <div
         style={{
@@ -160,7 +155,7 @@ function timeRangeLabel(sel: string[]): string {
 }
 
 type Props = {
-  variant?: "radar" | "list";
+  variant?: "radar" | "list" | "tree";
   showZoom?: boolean;
   zoom?: number;
   fitZoom?: number;
@@ -180,6 +175,31 @@ type Props = {
   onSegmentsChanged?: () => void;
   /** When provided, render a collapse control that hides the sidebar (radar only). */
   onCollapse?: () => void;
+  /* --- Tree view only. Mode, depth and anchor are view state rather than
+     filter predicates, so they stay out of FilterState — the same way
+     colorMode and shapeMode already do. --- */
+  treeMode?: "groups" | "deps";
+  onTreeModeChange?: (mode: "groups" | "deps") => void;
+  treeShape?: "columns" | "radial";
+  onTreeShapeChange?: (shape: "columns" | "radial") => void;
+  ungroupedInTree?: boolean;
+  onUngroupedInTreeChange?: (inTree: boolean) => void;
+  ungroupedCount?: number;
+  treeLevels?: number | "all";
+  onTreeLevelsChange?: (levels: number | "all") => void;
+  /** Generations present in the forest, which bounds the level buttons. */
+  treeMaxLevels?: number;
+  focusName?: string | null;
+  onFocusClear?: () => void;
+  /** Whether the canvas is armed to pick a focus target on the next click. */
+  focusPicking?: boolean;
+  onFocusPickingChange?: (picking: boolean) => void;
+  focusScope?: "subtree" | "siblings" | "lineage";
+  onFocusScopeChange?: (scope: "subtree" | "siblings" | "lineage") => void;
+  treeDepth?: 1 | 2 | 3;
+  onTreeDepthChange?: (depth: 1 | 2 | 3) => void;
+  anchorName?: string | null;
+  onAnchorClear?: () => void;
 };
 
 const ZOOM_STEP_PERCENT = 10;
@@ -204,8 +224,33 @@ export function Sidebar({
   onShapeModeChange,
   onSegmentsChanged,
   onCollapse,
+  treeMode = "groups",
+  onTreeModeChange,
+  treeShape = "columns",
+  onTreeShapeChange,
+  ungroupedInTree = false,
+  onUngroupedInTreeChange,
+  ungroupedCount = 0,
+  treeLevels = "all",
+  onTreeLevelsChange,
+  treeMaxLevels = 1,
+  focusName = null,
+  onFocusClear,
+  focusPicking = false,
+  onFocusPickingChange,
+  focusScope = "subtree",
+  onFocusScopeChange,
+  treeDepth = 2,
+  onTreeDepthChange,
+  anchorName = null,
+  onAnchorClear,
 }: Props) {
   const isList = variant === "list";
+  const isTree = variant === "tree";
+  // Registry-scoped filters make sense wherever the whole registry is on
+  // screen, which is both the list and the tree — but not the radar, where
+  // only On Radar entries are ever plotted.
+  const showRegistryFilters = isList || isTree;
   const { isAdmin, isWriter } = useAuth();
   const readOnly = useReadOnlyRadar();
   const { width, onPointerDown, reset } = useResizableWidth(
@@ -286,9 +331,7 @@ export function Sidebar({
         <div
           onMouseEnter={() => setHoveredGroupId(node.topic_id)}
           onMouseLeave={() =>
-            setHoveredGroupId((cur) =>
-              cur === node.topic_id ? null : cur,
-            )
+            setHoveredGroupId((cur) => (cur === node.topic_id ? null : cur))
           }
           style={{
             display: "flex",
@@ -305,7 +348,11 @@ export function Sidebar({
           <button
             type="button"
             aria-label={
-              hasChildren ? (expanded ? "Collapse group" : "Expand group") : undefined
+              hasChildren
+                ? expanded
+                  ? "Collapse group"
+                  : "Expand group"
+                : undefined
             }
             disabled={!hasChildren}
             onClick={() => hasChildren && toggleGroupExpanded(node.topic_id)}
@@ -380,9 +427,13 @@ export function Sidebar({
     );
   }
   const showColorPicker =
-    !isList && colorMode !== undefined && onColorModeChange !== undefined;
+    variant === "radar" &&
+    colorMode !== undefined &&
+    onColorModeChange !== undefined;
   const showShapePicker =
-    !isList && shapeMode !== undefined && onShapeModeChange !== undefined;
+    variant === "radar" &&
+    shapeMode !== undefined &&
+    onShapeModeChange !== undefined;
   const sorted = [...data.segments].sort((a, b) => a.order - b.order);
 
   function toggleRing(name: RingName) {
@@ -471,7 +522,7 @@ export function Sidebar({
       hasPeerRefs: null,
       timeToMainstream: [],
       personIds: [],
-      visibility: isList && isWriter ? "public" : "all",
+      visibility: showRegistryFilters && isWriter ? "public" : "all",
       groupId: null,
     });
     onSearchChange("");
@@ -489,7 +540,7 @@ export function Sidebar({
     onFiltersChange({ ...filters, personIds: next });
   }
 
-  const defaultVisibility = isList && isWriter ? "public" : "all";
+  const defaultVisibility = showRegistryFilters && isWriter ? "public" : "all";
   const hasFilters =
     filters.segments.length > 0 ||
     filters.rings.length > 0 ||
@@ -501,10 +552,10 @@ export function Sidebar({
     filters.hasPeerRefs !== null ||
     filters.timeToMainstream.length > 0 ||
     (filters.personIds?.length ?? 0) > 0 ||
-    (isList &&
+    (showRegistryFilters &&
       (filters.registryStatuses.length !== 1 ||
         filters.registryStatuses[0] !== "On Radar")) ||
-    (isList && filters.visibility !== defaultVisibility) ||
+    (showRegistryFilters && filters.visibility !== defaultVisibility) ||
     (showColorPicker && colorMode !== "segment") ||
     (showShapePicker && shapeMode !== "dot") ||
     filters.groupId != null ||
@@ -602,9 +653,254 @@ export function Sidebar({
         />
 
         <Hr />
-        <FiltersHeader
-          onReset={hasFilters ? clearAll : undefined}
-        />
+        <FiltersHeader onReset={hasFilters ? clearAll : undefined} />
+
+        {isTree && (
+          <>
+            <SectionHeader
+              label="Hierarchy"
+              resetLabel="Reset hierarchy mode"
+            />
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "var(--space-1)",
+              }}
+            >
+              <Chip
+                active={treeMode === "groups"}
+                onClick={() => onTreeModeChange?.("groups")}
+                label="Groups"
+              />
+              <Chip
+                active={treeMode === "deps"}
+                onClick={() => onTreeModeChange?.("deps")}
+                label="Dependencies"
+              />
+            </div>
+
+            {treeMode === "groups" && (
+              <>
+                <SectionHeader label="Layout" resetLabel="Reset layout" />
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "var(--space-1)",
+                  }}
+                >
+                  <Chip
+                    active={treeShape === "columns"}
+                    onClick={() => onTreeShapeChange?.("columns")}
+                    label="Columns"
+                  />
+                  <Chip
+                    active={treeShape === "radial"}
+                    onClick={() => onTreeShapeChange?.("radial")}
+                    label="Radial"
+                  />
+                </div>
+
+                {treeMaxLevels > 1 && (
+                  <>
+                    <SectionHeader label="Levels" resetLabel="Reset levels" />
+                    <LevelSlider
+                      max={treeMaxLevels}
+                      value={treeLevels}
+                      onChange={(v) => onTreeLevelsChange?.(v)}
+                    />
+                  </>
+                )}
+
+                <SectionHeader
+                  label="Focus"
+                  onReset={focusName ? onFocusClear : undefined}
+                  resetLabel="Clear focus"
+                />
+                {focusName ? (
+                  <div
+                    style={{
+                      fontSize: "var(--font-size-xs)",
+                      color: "var(--color-dark-text)",
+                      padding: "2px 0",
+                    }}
+                  >
+                    {focusName}
+                  </div>
+                ) : (
+                  /* The gesture used to be documented here and nowhere else,
+                     which asked the reader to already know it before they
+                     could find it. The button is the discoverable route; the
+                     shortcuts under it are for the second visit. */
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onFocusPickingChange?.(!focusPicking)}
+                      aria-pressed={focusPicking}
+                      style={{
+                        width: "100%",
+                        marginTop: 2,
+                        padding: "4px 8px",
+                        border: `1px solid ${
+                          focusPicking
+                            ? "var(--color-brand-dark-blue)"
+                            : "var(--color-border-strong)"
+                        }`,
+                        borderRadius: "var(--radius-sm)",
+                        background: focusPicking
+                          ? "var(--color-brand-dark-blue)"
+                          : "var(--color-white)",
+                        color: focusPicking
+                          ? "var(--color-white)"
+                          : "var(--color-dark-text)",
+                        fontFamily: "var(--font-family)",
+                        fontSize: "var(--font-size-xs)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {focusPicking ? "Pick a node… (Esc)" : "Focus on a node…"}
+                    </button>
+                    <div
+                      style={{
+                        fontSize: "var(--font-size-xs)",
+                        color: "var(--color-muted-text)",
+                        padding: "3px 0 0",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      or {altKeyLabel()}-click a node, or press and hold it
+                    </div>
+                  </>
+                )}
+                {focusName && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "var(--space-1)",
+                      marginTop: "var(--space-1)",
+                    }}
+                  >
+                    {(
+                      [
+                        [
+                          "subtree",
+                          "Subtree",
+                          "This node and everything under it",
+                        ],
+                        [
+                          "siblings",
+                          "Siblings",
+                          "The row it sits in, peers included",
+                        ],
+                        [
+                          "lineage",
+                          "Lineage",
+                          "Its path from the root, plus its subtree",
+                        ],
+                      ] as const
+                    ).map(([scope, label, description]) => (
+                      <Chip
+                        key={scope}
+                        active={focusScope === scope}
+                        onClick={() => onFocusScopeChange?.(scope)}
+                        label={label}
+                        ariaLabel={description}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {ungroupedCount > 0 && (
+                  <>
+                    <SectionHeader
+                      label={`Ungrouped (${ungroupedCount})`}
+                      resetLabel="Reset ungrouped"
+                    />
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "var(--space-1)",
+                      }}
+                    >
+                      <Chip
+                        active={!ungroupedInTree}
+                        onClick={() => onUngroupedInTreeChange?.(false)}
+                        label="In tray"
+                      />
+                      <Chip
+                        active={ungroupedInTree}
+                        onClick={() => onUngroupedInTreeChange?.(true)}
+                        label="As roots"
+                      />
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {treeMode === "deps" && (
+              <>
+                <SectionHeader label="Depth" resetLabel="Reset depth" />
+                <div style={{ display: "flex", gap: "var(--space-1)" }}>
+                  {[1, 2, 3].map((level) => {
+                    const levelColor = groupDepthColor(level - 1);
+                    const levelActive = treeDepth === level;
+                    return (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => onTreeDepthChange?.(level as 1 | 2 | 3)}
+                        aria-label={`Depth plus or minus ${level}`}
+                        aria-pressed={levelActive}
+                        title={`Trace ${level} level(s) each way`}
+                        style={{
+                          width: 18,
+                          height: 18,
+                          padding: 0,
+                          border: `1px solid ${levelColor}`,
+                          borderRadius: 4,
+                          background: levelActive
+                            ? levelColor
+                            : "var(--color-white)",
+                          color: levelActive
+                            ? "var(--color-white)"
+                            : levelColor,
+                          fontSize: 10,
+                          fontWeight: "var(--font-weight-bold)",
+                          lineHeight: 1,
+                          cursor: "pointer",
+                          fontFamily: "var(--font-family)",
+                        }}
+                      >
+                        {level}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <SectionHeader
+                  label="Anchor"
+                  onReset={anchorName ? onAnchorClear : undefined}
+                  resetLabel="Clear anchor"
+                />
+                <div
+                  style={{
+                    fontSize: "var(--font-size-xs)",
+                    color: anchorName
+                      ? "var(--color-dark-text)"
+                      : "var(--color-muted-text)",
+                    padding: "2px 0",
+                  }}
+                >
+                  {anchorName ?? "Search above to pick one"}
+                </div>
+              </>
+            )}
+          </>
+        )}
 
         {showColorPicker && (
           <>
@@ -667,7 +963,7 @@ export function Sidebar({
           </>
         )}
 
-        {isList && (
+        {showRegistryFilters && (
           <>
             {/* ── Registry Status (first list filter — no divider directly
                  under the Filters label) ── */}
@@ -704,8 +1000,8 @@ export function Sidebar({
           </>
         )}
 
-        {/* Writer-only visibility filter — list view only. */}
-        {isList && isWriter && (
+        {/* Writer-only visibility filter — list and tree. */}
+        {showRegistryFilters && isWriter && (
           <>
             <Hr />
             <SectionHeader
@@ -874,10 +1170,10 @@ export function Sidebar({
           onClear={() => onFiltersChange({ ...filters, personIds: [] })}
         />
 
-        {isList && (
+        {showRegistryFilters && (
           <>
             <Hr />
-            {/* ── Data completeness (tri-state toggles) — list only ── */}
+            {/* ── Data completeness (tri-state toggles) ── */}
             <SectionHeader
               label="Completeness"
               onReset={
@@ -964,53 +1260,7 @@ export function Sidebar({
             gap: "var(--space-2)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <SectionLabel>Group</SectionLabel>
-            {maxGroupDepth > 0 && (
-              <span
-                style={{ display: "flex", gap: 2, alignItems: "center" }}
-                title="Unfold the tree up to this level"
-              >
-                {Array.from(
-                  { length: Math.min(3, maxGroupDepth + 1) },
-                  (_, i) => i + 1,
-                ).map((level) => {
-                  const levelColor = groupDepthColor(level - 1);
-                  const levelActive = activeExpandLevel === level;
-                  return (
-                    <button
-                      key={level}
-                      type="button"
-                      onClick={() => expandGroupsToLevel(level)}
-                      aria-label={`Expand to level ${level}`}
-                      aria-pressed={levelActive}
-                      title={`Unfold to level ${level}`}
-                      style={{
-                        width: 18,
-                        height: 18,
-                        padding: 0,
-                        border: `1px solid ${levelColor}`,
-                        borderRadius: 4,
-                        background: levelActive
-                          ? levelColor
-                          : "var(--color-white)",
-                        color: levelActive
-                          ? "var(--color-white)"
-                          : levelColor,
-                        fontSize: 10,
-                        fontWeight: "var(--font-weight-bold)",
-                        lineHeight: 1,
-                        cursor: "pointer",
-                        fontFamily: "var(--font-family)",
-                      }}
-                    >
-                      {level}
-                    </button>
-                  );
-                })}
-              </span>
-            )}
-          </div>
+          <SectionLabel>Group</SectionLabel>
           {filters.groupId != null && (
             <ResetButton
               onClick={() => onFiltersChange({ ...filters, groupId: null })}
@@ -1018,6 +1268,13 @@ export function Sidebar({
             />
           )}
         </div>
+        {maxGroupDepth > 0 && (
+          <GroupDepthPicker
+            levels={maxGroupDepth + 1}
+            active={activeExpandLevel}
+            onPick={expandGroupsToLevel}
+          />
+        )}
         {groupTree.length === 0 ? (
           <div
             style={{
@@ -1137,7 +1394,9 @@ function FiltersHeader({ onReset }: { onReset?: () => void }) {
       >
         Filters
       </span>
-      {onReset && <ResetButton onClick={onReset} aria-label="Reset all filters" />}
+      {onReset && (
+        <ResetButton onClick={onReset} aria-label="Reset all filters" />
+      )}
     </div>
   );
 }
@@ -1468,12 +1727,14 @@ function Chip({
   active,
   onClick,
   label,
+  ariaLabel,
   inactiveBg,
   inactiveText,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
+  ariaLabel?: string;
   inactiveBg?: string;
   inactiveText?: string;
 }) {
@@ -1482,11 +1743,67 @@ function Chip({
       variant="filter"
       active={active}
       onClick={onClick}
+      ariaLabel={ariaLabel}
       inactiveBg={inactiveBg}
       inactiveText={inactiveText}
     >
       {label}
     </SharedChip>
+  );
+}
+
+/**
+ * Depth picker for the group tree.
+ *
+ * A chip per level stopped scaling once group nesting became configurable up
+ * to twelve — a dozen one-character buttons is a worse target than a single
+ * track. The top of the track is "All" rather than the deepest number so the
+ * choice survives the forest growing another level.
+ */
+function LevelSlider({
+  max,
+  value,
+  onChange,
+}: {
+  max: number;
+  value: number | "all";
+  onChange: (value: number | "all") => void;
+}) {
+  const current = value === "all" ? max : Math.min(value, max);
+  const readout =
+    value === "all" ? `All ${max} levels` : `${current} of ${max} levels`;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {/* Above the track rather than beside it: the rail is narrow, and a
+          number squeezed into the margin has no room to say what it counts. */}
+      <span
+        style={{
+          fontSize: "var(--font-size-xs)",
+          fontWeight: "var(--font-weight-medium)",
+          color: "var(--color-dark-text)",
+        }}
+      >
+        {readout}
+      </span>
+      <input
+        type="range"
+        min={1}
+        max={max}
+        step={1}
+        value={current}
+        aria-label="Levels of the group tree to show"
+        aria-valuetext={readout}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          onChange(next >= max ? "all" : next);
+        }}
+        style={{
+          width: "100%",
+          minWidth: 0,
+          accentColor: "var(--color-active-filter)",
+        }}
+      />
+    </div>
   );
 }
 

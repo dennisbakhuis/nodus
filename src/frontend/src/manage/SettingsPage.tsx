@@ -13,6 +13,19 @@ const ORG_URL_KEY = "org.url";
 const ORG_CONTACT_EMAIL_KEY = "org.contact_email";
 const ORG_ADDRESS_KEY = "org.address";
 
+const GROUP_MAX_DEPTH_KEY = "groups.max_depth";
+// Mirrors `app/services/grouping.py`; the backend clamps to the same bounds,
+// so a stale frontend can only ever be more restrictive than the server.
+const GROUP_DEPTH_DEFAULT = 8;
+const GROUP_DEPTH_MIN = 1;
+const GROUP_DEPTH_HARD_LIMIT = 12;
+
+function parseGroupDepth(raw: string): number {
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return GROUP_DEPTH_DEFAULT;
+  return Math.min(GROUP_DEPTH_HARD_LIMIT, Math.max(GROUP_DEPTH_MIN, n));
+}
+
 const DEMO_ENABLED_KEY = "demo.enabled";
 const DEMO_SECONDS_PER_STEP_KEY = "demo.seconds_per_step";
 const DEMO_SCROLL_PROBABILITY_KEY = "demo.scroll_probability";
@@ -103,6 +116,14 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savingOrg, setSavingOrg] = useState(false);
   const [savingDemo, setSavingDemo] = useState(false);
+  const [savingGroups, setSavingGroups] = useState(false);
+  const [groupStatus, setGroupStatus] = useState<{
+    kind: "ok" | "err";
+    msg: string;
+  } | null>(null);
+  const [groupMaxDepth, setGroupMaxDepth] = useState(GROUP_DEPTH_DEFAULT);
+  const [savedGroupMaxDepth, setSavedGroupMaxDepth] =
+    useState(GROUP_DEPTH_DEFAULT);
   const [status, setStatus] = useState<{
     kind: "ok" | "err";
     msg: string;
@@ -150,6 +171,10 @@ export function SettingsPage() {
         key: DEMO_MODAL_PROBABILITY_KEY,
         value: String(DEMO_MODAL_PCT_DEFAULT / 100),
       })),
+      getSetting(GROUP_MAX_DEPTH_KEY).catch(() => ({
+        key: GROUP_MAX_DEPTH_KEY,
+        value: String(GROUP_DEPTH_DEFAULT),
+      })),
     ])
       .then(
         ([
@@ -163,47 +188,52 @@ export function SettingsPage() {
           demoSec,
           demoScroll,
           demoModal,
+          groupDepth,
         ]) => {
-        if (cancelled) return;
-        if (logo.value === NODUS_LOGO_SENTINEL) {
-          setLogoMode("nodus");
-          setCustomLogo("");
-        } else {
-          // Empty or legacy URL/data: value → Custom mode with the existing
-          // value carried over (so the preview shows what's currently saved).
-          setLogoMode("custom");
-          setCustomLogo(logo.value);
-        }
-        setSavedUrl(logo.value);
-        setOrgName(name.value);
-        setSavedOrgName(name.value);
-        setOrgSlug(slug.value);
-        setSavedOrgSlug(slug.value);
-        setOrgUrl(url.value);
-        setSavedOrgUrl(url.value);
-        setOrgContactEmail(email.value);
-        setSavedOrgContactEmail(email.value);
-        setOrgAddress(address.value);
-        setSavedOrgAddress(address.value);
-        const enabled = demoOn.value === "true";
-        setDemoEnabled(enabled);
-        setSavedDemoEnabled(enabled);
-        const sec = parseDemoSeconds(demoSec.value);
-        setDemoSeconds(sec);
-        setSavedDemoSeconds(sec);
-        const scrollPct = probabilityToPercent(
-          demoScroll.value,
-          DEMO_SCROLL_PCT_DEFAULT,
-        );
-        setDemoScrollPct(scrollPct);
-        setSavedDemoScrollPct(scrollPct);
-        const modalPct = probabilityToPercent(
-          demoModal.value,
-          DEMO_MODAL_PCT_DEFAULT,
-        );
-        setDemoModalPct(modalPct);
-        setSavedDemoModalPct(modalPct);
-      })
+          if (cancelled) return;
+          if (logo.value === NODUS_LOGO_SENTINEL) {
+            setLogoMode("nodus");
+            setCustomLogo("");
+          } else {
+            // Empty or legacy URL/data: value → Custom mode with the existing
+            // value carried over (so the preview shows what's currently saved).
+            setLogoMode("custom");
+            setCustomLogo(logo.value);
+          }
+          setSavedUrl(logo.value);
+          setOrgName(name.value);
+          setSavedOrgName(name.value);
+          setOrgSlug(slug.value);
+          setSavedOrgSlug(slug.value);
+          setOrgUrl(url.value);
+          setSavedOrgUrl(url.value);
+          setOrgContactEmail(email.value);
+          setSavedOrgContactEmail(email.value);
+          setOrgAddress(address.value);
+          setSavedOrgAddress(address.value);
+          const enabled = demoOn.value === "true";
+          setDemoEnabled(enabled);
+          setSavedDemoEnabled(enabled);
+          const sec = parseDemoSeconds(demoSec.value);
+          setDemoSeconds(sec);
+          setSavedDemoSeconds(sec);
+          const scrollPct = probabilityToPercent(
+            demoScroll.value,
+            DEMO_SCROLL_PCT_DEFAULT,
+          );
+          setDemoScrollPct(scrollPct);
+          setSavedDemoScrollPct(scrollPct);
+          const modalPct = probabilityToPercent(
+            demoModal.value,
+            DEMO_MODAL_PCT_DEFAULT,
+          );
+          setDemoModalPct(modalPct);
+          setSavedDemoModalPct(modalPct);
+          const depth = parseGroupDepth(groupDepth.value);
+          setGroupMaxDepth(depth);
+          setSavedGroupMaxDepth(depth);
+        },
+      )
       .catch((e) => {
         if (cancelled) return;
         setStatus({
@@ -307,6 +337,28 @@ export function SettingsPage() {
       });
     } finally {
       setSavingOrg(false);
+    }
+  }
+
+  const groupsDirty = groupMaxDepth !== savedGroupMaxDepth;
+
+  async function handleSaveGroups() {
+    setSavingGroups(true);
+    setGroupStatus(null);
+    try {
+      const clamped = parseGroupDepth(String(groupMaxDepth));
+      const row = await upsertSetting(GROUP_MAX_DEPTH_KEY, String(clamped));
+      const saved = parseGroupDepth(row.value);
+      setGroupMaxDepth(saved);
+      setSavedGroupMaxDepth(saved);
+      setGroupStatus({ kind: "ok", msg: "Saved." });
+    } catch (e) {
+      setGroupStatus({
+        kind: "err",
+        msg: e instanceof Error ? e.message : "Save failed",
+      });
+    } finally {
+      setSavingGroups(false);
     }
   }
 
@@ -642,14 +694,76 @@ export function SettingsPage() {
       </section>
 
       <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Group hierarchy</h2>
+        <p className={styles.sectionDesc}>
+          Technologies can be nested under group topics, which is what the Tree
+          view draws. This caps how deep that nesting may go — the limit is
+          checked when a parent is assigned, so lowering it leaves existing
+          deeper branches in place and only blocks new ones.
+        </p>
+
+        <div className={styles.field}>
+          <Field
+            label="Maximum nesting depth"
+            helper={`How many generations a group chain may have, ${GROUP_DEPTH_MIN}–${GROUP_DEPTH_HARD_LIMIT}. Past ${GROUP_DEPTH_HARD_LIMIT} the tree runs out of distinct level colours and the layout stops being readable, so that is a hard ceiling.`}
+          >
+            {({ id, describedBy }) => (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--space-3)",
+                }}
+              >
+                <input
+                  id={id}
+                  aria-describedby={describedBy}
+                  type="range"
+                  min={GROUP_DEPTH_MIN}
+                  max={GROUP_DEPTH_HARD_LIMIT}
+                  step={1}
+                  value={groupMaxDepth}
+                  onChange={(e) => setGroupMaxDepth(Number(e.target.value))}
+                  style={{ flex: 1, accentColor: "var(--color-active-filter)" }}
+                />
+                <span
+                  style={{
+                    minWidth: 64,
+                    fontWeight: "var(--font-weight-medium)",
+                  }}
+                >
+                  {groupMaxDepth} level{groupMaxDepth === 1 ? "" : "s"}
+                </span>
+              </div>
+            )}
+          </Field>
+        </div>
+
+        <StatusBanner
+          variant={groupStatus?.kind === "ok" ? "success" : "error"}
+          message={groupStatus ? groupStatus.msg : null}
+          onDismiss={() => setGroupStatus(null)}
+        />
+        <div className={styles.actions}>
+          <button
+            className={styles.saveBtn}
+            onClick={handleSaveGroups}
+            disabled={savingGroups || !groupsDirty}
+          >
+            {savingGroups ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </section>
+
+      <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Presentation mode</h2>
         <p className={styles.sectionDesc}>
           Self-running tour of the radar — a simulated cursor visits dots and
           labels at random, opens their detail panels, and may also scroll
           through the panel or expand the full detail modal. Useful for demos
           and unattended displays. When enabled, a ▶ button appears in the
-          top-right of the radar. Any real mouse or keyboard activity stops
-          the tour.
+          top-right of the radar. Any real mouse or keyboard activity stops the
+          tour.
         </p>
 
         <div className={styles.field}>
@@ -717,9 +831,7 @@ export function SettingsPage() {
                 onChange={(e) => {
                   const parsed = Number.parseInt(e.target.value, 10);
                   setDemoScrollPct(
-                    Number.isFinite(parsed)
-                      ? parsed
-                      : DEMO_SCROLL_PCT_DEFAULT,
+                    Number.isFinite(parsed) ? parsed : DEMO_SCROLL_PCT_DEFAULT,
                   );
                 }}
                 onBlur={() =>
@@ -750,9 +862,7 @@ export function SettingsPage() {
                 onChange={(e) => {
                   const parsed = Number.parseInt(e.target.value, 10);
                   setDemoModalPct(
-                    Number.isFinite(parsed)
-                      ? parsed
-                      : DEMO_MODAL_PCT_DEFAULT,
+                    Number.isFinite(parsed) ? parsed : DEMO_MODAL_PCT_DEFAULT,
                   );
                 }}
                 onBlur={() =>

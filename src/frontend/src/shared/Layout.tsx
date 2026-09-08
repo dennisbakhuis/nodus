@@ -9,6 +9,7 @@ import { useAddAction } from "./AddActionContext";
 import { useDemoMode } from "./DemoModeContext";
 import { ExportMenu } from "../radar/ExportMenu";
 import { DataExportMenu } from "../radar/DataExportMenu";
+import { prepareTreeExportSvg } from "../tree/treeExport";
 import { HelpButton } from "../help/HelpButton";
 import { HelpPanel } from "../help/HelpPanel";
 import { ProfileCompletionModal } from "./ProfileCompletionModal";
@@ -41,7 +42,7 @@ export function Layout({ children }: Props) {
   const showDemoBtn = !!demoTarget && !reducedMotion && isAuthenticated;
   const navItems = [
     "Radar",
-    ...(canViewList ? ["List"] : []),
+    ...(canViewList ? ["Tree", "List"] : []),
     ...(isWriter ? ["Manage"] : []),
     "Guide",
   ];
@@ -228,6 +229,15 @@ export function Layout({ children }: Props) {
               <ExportMenu
                 svgRef={exportTarget.svgRef}
                 data={exportTarget.data}
+                variant="header"
+              />
+            )}
+            {isAuthenticated && exportTarget?.mode === "tree" && (
+              <ExportMenu
+                svgRef={exportTarget.svgRef}
+                data={exportTarget.data}
+                fileBase={exportTarget.fileBase}
+                prepare={prepareTreeExportSvg}
                 variant="header"
               />
             )}

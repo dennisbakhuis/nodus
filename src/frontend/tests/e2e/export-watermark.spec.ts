@@ -1,11 +1,68 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import * as path from "node:path";
 import * as fs from "node:fs";
+import { API_BASE, signIn } from "./support/session";
+
+/**
+ * Point `radar.center_logo_url` at a custom value and register its restoration.
+ *
+ * Returns false when the setting could not be written, so the caller can skip
+ * rather than assert against a radar that still carries the Nodus centre mark.
+ */
+async function setCenterLogo(
+  page: Page,
+  token: string,
+  url: string,
+): Promise<boolean> {
+  const key = "radar.center_logo_url";
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const before = await page.request
+    .get(`${API_BASE}/settings/${key}`)
+    .catch(() => null);
+  const previous = before?.ok()
+    ? (((await before.json()) as { value?: string }).value ?? "")
+    : "";
+
+  const res = await page.request
+    .put(`${API_BASE}/settings/${key}`, { headers, data: { value: url } })
+    .catch(() => null);
+  if (!res || !res.ok()) return false;
+
+  restoreCenterLogo = async () => {
+    await page.request
+      .put(`${API_BASE}/settings/${key}`, {
+        headers,
+        data: { value: previous },
+      })
+      .catch(() => null);
+  };
+  return true;
+}
+
+let restoreCenterLogo: (() => Promise<void>) | null = null;
+
+test.afterEach(async () => {
+  if (restoreCenterLogo) {
+    await restoreCenterLogo();
+    restoreCenterLogo = null;
+  }
+});
 
 test.describe("Export watermark", () => {
   test("SVG export places the Nodus watermark as a 5th ring-label slot right of Monitor", async ({
     page,
   }) => {
+    // Two preconditions the assertions below depend on. The export menu is
+    // only mounted for an authenticated user, and the default 5th-slot
+    // watermark this test is about is deliberately suppressed while the radar's
+    // centre logo is the Nodus mark — otherwise the brand would be stamped
+    // twice. Point the centre logo elsewhere so the branch under test runs.
+    const token = await signIn(page, "demo_admin");
+    test.skip(!token, "demo accounts unavailable");
+    const configured = await setCenterLogo(page, token!, "/org-logo.svg");
+    test.skip(!configured, "cannot configure the radar centre logo");
+
     await page.goto("/radar");
     await page.waitForLoadState("networkidle");
     await page.waitForSelector("svg[aria-label='Radar arc view']", {

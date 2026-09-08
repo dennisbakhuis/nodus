@@ -203,6 +203,8 @@ def _apply_post_create_migrations(engine_to_use: object) -> None:
         ).fetchall()
         if topic_rows:
             _ensure_column(session, "topic", "parent_topic_id", "parent_topic_id VARCHAR")
+            _ensure_column(session, "topic", "group_description", "group_description VARCHAR")
+            _ensure_column(session, "topic", "group_scope", "group_scope VARCHAR")
 
 
 def _ensure_person_profiles(engine_to_use: object) -> None:

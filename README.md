@@ -7,7 +7,7 @@
 
 # Nodus
 
-A self-hosted **Technology Radar** webapp. Curate technologies into rings (Invest / Pilot / Explore / Monitor) and segments, track movement across cycles, attach peer references and people, and export the result for stakeholder communication.
+A self-hosted **Technology Radar** webapp. Curate technologies into rings (Invest / Pilot / Explore / Monitor) and segments, map how they group and depend on each other, track movement across cycles, attach peer references and people, and export the result for stakeholder communication.
 
 Nodus is for teams who have outgrown a spreadsheet of "things we're watching" but don't want a third-party SaaS to own their scouting data. You get the ThoughtWorks-style visual radar, plus a structured catalog (factsheets, immutable assessments, peer references, people), role-based access, and reproducible exports — all running on your own infrastructure.
 
@@ -23,12 +23,22 @@ Nodus is for teams who have outgrown a spreadsheet of "things we're watching" bu
 - **Cycle-aware movement indicators** computed from `MovementEvent` history
 - **Center logo** — defaults to the Nodus mark; admins can swap in a custom organisation logo
 
+### Tree view
+- **Two hierarchies, one workspace** — technologies relate to each other in two independent ways, and a **Groups / Dependencies** switch chooses which one you are looking at
+- **Group hierarchy** — the *is a kind of* forest, with its three kinds of node drawn distinctly: a **label group** (an umbrella with no technology behind it) as a hollow dashed square, a **technology group** (a technology that is *also* a parent) as a dot inside a ring, and a leaf **technology** as a plain dot
+- **Dependency lineage** — pick an anchor and trace it outwards: prerequisites fan left as `LEVEL +1`, `+2`; what depends on it fans right as `LEVEL -1`, `-2`, to a selectable depth
+- **Honest about cycles** — technologies can genuinely depend on each other, so a link that closes a loop or skips a level is drawn as a faint dashed back edge rather than quietly hidden
+- **Shareable** — mode, anchor, depth and every filter live in the URL, so a copied link reopens exactly what you were looking at
+
+![Tree view — dependency lineage](assets/screenshots/tree-dependencies.png)
+
 ### Catalog management
 - **Topics, Technologies, Factsheets, Assessments** as a v2 data model with strict FK enforcement
 - **Aliases** with case- and punctuation-insensitive matching for de-duplication
 - **Peer references** — link each topic to how peer organisations classify it, with multiple source URLs per peer
 - **People** — link domain experts and contacts to topics with role chips (Owner, Contact, Champion)
-- **Relations** — typed directed edges between topics (`drives`, `driven_by`, `hinders`, `hindered_by`, `relates_to`)
+- **Groups** — a multi-level *is a kind of* hierarchy on topics; a group can be a pure label or a technology that is itself on the radar (browse it in the tree view)
+- **Relations** — typed directed edges between topics (`drives`, `driven_by`, `hinders`, `hindered_by`, `relates_to`), traced transitively in the tree view
 - **Cycles** — review-period containers; one open cycle at a time, history preserved for snapshots
 - **Strategic Innovation Fields** — optional cross-segment grouping for portfolio reporting
 

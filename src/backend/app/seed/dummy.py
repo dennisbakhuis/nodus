@@ -40,7 +40,9 @@ from app.models import (
 )
 from app.models.cycle import Cycle
 from app.models.initiative import Initiative
+from app.models.person import Person
 from app.models.relation import Relation, RelationType
+from app.models.topic_person_link import PersonLinkRole, TopicPersonLink
 from app.services.media import upload_media_asset
 from app.services.normalize import normalize_alias
 
@@ -171,6 +173,71 @@ GROUP_PARENTS: tuple[tuple[str, str], ...] = (
 LABEL_GROUPS: tuple[tuple[str, str], ...] = (
     ("Artificial Intelligence", "artificial-intelligence"),
     ("Platforms & Infrastructure", "platforms-infrastructure"),
+)
+
+# Group profiles (slug, what the family covers, what belongs in it). Only the
+# five topics that actually parent something carry one — a leaf has no family
+# to describe. The scope halves deliberately say what is *out*, since that is
+# the half that stops a taxonomy drifting.
+GROUP_PROFILES: tuple[tuple[str, str, str], ...] = (
+    (
+        "artificial-intelligence",
+        "Everything whose behaviour is learned from data rather than written "
+        "down. The umbrella keeps the model-centric entries together; nobody "
+        "adopts it as a technology in its own right.",
+        "Model families, training approaches, and the tooling around them. A "
+        "business application that happens to call a model belongs under the "
+        "area it serves, not here.",
+    ),
+    (
+        "generative-ai",
+        "Models that produce new content — text, image, audio, code — rather "
+        "than classifying or ranking content that already exists.",
+        "The model families and the patterns for putting them to work. "
+        "Discriminative models stay with the parent.",
+    ),
+    (
+        "ai-agents",
+        "Systems that plan a sequence of steps and call tools to carry them "
+        "out, instead of answering in a single pass.",
+        "Agent frameworks, orchestration, and tool protocols. One prompted "
+        "call is not an agent, however elaborate the prompt.",
+    ),
+    (
+        "platforms-infrastructure",
+        "The substrate other work runs on — compute, connectivity, and the "
+        "operational surface delivery teams build against.",
+        "What a delivery team consumes rather than builds. Products built on "
+        "top belong with the business area that owns them.",
+    ),
+    (
+        "cloud-computing",
+        "Compute, storage, and managed services rented rather than owned, "
+        "together with the operating model that comes with them.",
+        "Provider platforms and the patterns for running on them. Workloads "
+        "that have to sit near the data belong under Edge Computing beneath "
+        "this.",
+    ),
+)
+
+
+# People attached to a group (group_slug, full_name, company, link_role).
+# A person is matched on (full_name, company) — the same natural key the
+# find-or-create endpoint uses — so re-seeding reuses a profile the operator
+# may already have created by hand rather than making a second one.
+GROUP_PEOPLE: tuple[tuple[str, str, str, PersonLinkRole], ...] = (
+    (
+        "artificial-intelligence",
+        "Dennis Bakhuis",
+        "Nodus",
+        PersonLinkRole.Owner,
+    ),
+    (
+        "ai-agents",
+        "Dennis Bakhuis",
+        "Nodus",
+        PersonLinkRole.SubjectMatterExpert,
+    ),
 )
 
 
@@ -1338,6 +1405,71 @@ def _seed_groups(session: Session) -> int:
     return linked
 
 
+def _seed_group_people(session: Session) -> int:
+    """Link the example people to their groups. Returns the number of new links.
+
+    Idempotent on both halves: a Person is found by (full_name, company) before
+    one is created, and a link is only added when that person does not already
+    hold that role on that topic.
+    """
+    slugs = {slug for slug, _, _, _ in GROUP_PEOPLE}
+    topic_by_slug = {
+        t.slug: t for t in session.exec(select(Topic).where(col(Topic.slug).in_(slugs))).all()
+    }
+    created = 0
+    for slug, full_name, company, link_role in GROUP_PEOPLE:
+        topic = topic_by_slug.get(slug)
+        if topic is None:
+            logger.warning("dummy: group person skipped — missing topic (%s)", slug)
+            continue
+        person = session.exec(
+            select(Person).where(Person.full_name == full_name).where(Person.company == company)
+        ).first()
+        if person is None:
+            person = Person(full_name=full_name, company=company)
+            session.add(person)
+            session.flush()
+        existing = session.exec(
+            select(TopicPersonLink)
+            .where(TopicPersonLink.topic_id == topic.id)
+            .where(TopicPersonLink.person_id == person.id)
+            .where(TopicPersonLink.link_role == str(link_role))
+        ).first()
+        if existing is None:
+            session.add(
+                TopicPersonLink(topic_id=topic.id, person_id=person.id, link_role=str(link_role))
+            )
+            created += 1
+    return created
+
+
+def _seed_group_profiles(session: Session) -> int:
+    """Fill in the example group profiles. Returns the number of fields written.
+
+    Only writes a field that is currently empty. The seed is re-runnable, and
+    re-running it must not throw away what an operator wrote over the top.
+    """
+    slugs = {slug for slug, _, _ in GROUP_PROFILES}
+    topic_by_slug = {
+        t.slug: t for t in session.exec(select(Topic).where(col(Topic.slug).in_(slugs))).all()
+    }
+    written = 0
+    for slug, description, scope in GROUP_PROFILES:
+        topic = topic_by_slug.get(slug)
+        if topic is None:
+            logger.warning("dummy: group profile skipped — missing topic (%s)", slug)
+            continue
+        if not topic.group_description:
+            topic.group_description = description
+            written += 1
+        if not topic.group_scope:
+            topic.group_scope = scope
+            written += 1
+        if written:
+            session.add(topic)
+    return written
+
+
 def seed_dummy(session: Session) -> dict[str, int]:
     """Run the full dummy seed against an existing Session.
 
@@ -1358,6 +1490,8 @@ def seed_dummy(session: Session) -> dict[str, int]:
         "hero_images": 0,
         "relations": 0,
         "groups": 0,
+        "group_profiles": 0,
+        "group_people": 0,
     }
 
     if _seed_cycle(session):
@@ -1390,6 +1524,9 @@ def seed_dummy(session: Session) -> dict[str, int]:
     session.flush()
     counts["relations"] = _seed_relations(session)
     counts["groups"] = _seed_groups(session)
+    session.flush()
+    counts["group_profiles"] = _seed_group_profiles(session)
+    counts["group_people"] = _seed_group_people(session)
     session.commit()
     return counts
 

@@ -3,7 +3,7 @@
 ## Introduction
 
 Nodus is a technology-radar tool: it helps a team spot emerging technologies,
-judge them, and publish clear recommendations. The radar shows *what to do* about
+judge them, and publish clear recommendations. The radar shows _what to do_ about
 each technology at a glance; everything else in Nodus exists to produce and keep
 that picture current.
 
@@ -36,6 +36,8 @@ Scouting runs as a loop, not a one-off project:
 5. **Communicate** — publish the radar and supporting material.
 6. **Revisit** — re-examine prior judgements next time.
 
+![The six steps of the scouting cycle](figure:scouting-cycle)
+
 Each turn of the loop is a **cycle**, typically run quarterly or biannually.
 
 > **In Nodus** — a cycle is a real object in **Manage ▸ Cycles**. Open one with
@@ -67,6 +69,8 @@ Each entry has a lifecycle status:
 - **On Radar** — actively shown as a dot, with a ring and a segment.
 - **Archive** — retired from the current radar but kept for history.
 
+![Backlog, then On Radar, then Archive](figure:lifecycle)
+
 Keeping archived and backlog items means you can answer "what did we think last
 year?" and "what did we choose not to pursue?".
 
@@ -78,7 +82,7 @@ year?" and "what did we choose not to pursue?".
 Assessment turns opinion into a comparable judgement by scoring each technology
 against shared **criteria**. The point isn't a precise number; it's a consistent,
 explainable basis for comparison so two reviewers reach similar conclusions.
-Record the *reasoning*, not just the score — that's what makes a recommendation
+Record the _reasoning_, not just the score — that's what makes a recommendation
 defensible, and what you revisit when circumstances change.
 
 > **In Nodus** — the edit modal's **Assessment** section captures **TRL**, **Time
@@ -112,9 +116,11 @@ business) and **ring** (distance from the centre — commitment). Position is th
 message: a glance tells a reader what to do. To keep that message clear, the radar
 stays deliberately simple:
 
+![Segments run around the radar, rings run outwards](figure:radar-anatomy)
+
 - **Segments** are few and stable — a long-lived, coarse taxonomy.
-- **Groups** are a finer, optional taxonomy (families like *Generative AI ▸
-  Agentic AI*) that highlight members without moving a dot.
+- **Groups** are a finer, optional taxonomy (families like _Generative AI ▸
+  Agentic AI_) that highlight members without moving a dot.
 - **Relations** capture influence between technologies — a separate idea from
   grouping.
 
@@ -147,18 +153,19 @@ references. The radar shows the decision; the factsheet shows the evidence.
 
 ## Getting around Nodus
 
-Nodus has four workspaces, reached from the tabs in the top bar. On every page the
+Nodus has five workspaces, reached from the tabs in the top bar. On every page the
 **Help** button explains what you're looking at, and this **Guide** is the bigger
 picture.
 
-### The four workspaces
+### The five workspaces
 
 - **Radar** — the picture: technologies plotted by segment and ring.
 - **List** — the same data as a sortable, filterable table (the registry).
+- **Tree** — how technologies relate to one another, as a hierarchy.
 - **Manage** — where writers and admins configure everything.
 - **Guide** — this handbook.
 
-The **List** and **Manage** tabs appear only if your role allows them.
+The **List**, **Tree** and **Manage** tabs appear only if your role allows them.
 
 ### Opening a technology
 
@@ -173,12 +180,14 @@ over what each role sees and can reach.
 
 ### The four roles
 
-| Role              | What they can do                                                                       |
-| ----------------- | -------------------------------------------------------------------------------------- |
-| **Public reader** | Anonymous visitor (no sign-in). Sees the radar and only the fields marked public.      |
-| **Reader**        | Signed in. Sees the full radar and technology detail.                                  |
-| **Writer**        | Reader + add and edit technologies, run cycles, and manage groups, people, and imports.|
-| **Admin**         | Writer + manage users, segments, data visibility, settings, backups, and API keys.     |
+| Role              | What they can do                                                                        |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| **Public reader** | Anonymous visitor (no sign-in). Sees the radar and only the fields marked public.       |
+| **Reader**        | Signed in. Sees the full radar and technology detail.                                   |
+| **Writer**        | Reader + add and edit technologies, run cycles, and manage groups, people, and imports. |
+| **Admin**         | Writer + manage users, segments, data visibility, settings, backups, and API keys.      |
+
+![Each role contains the one before it](figure:roles)
 
 ### What each role can see
 
@@ -190,8 +199,8 @@ the system — even through the API.
 ### What each role can reach
 
 The same page controls two **capabilities**: whether a role can open the **List**
-view and whether it can switch to **historical cycles**. The radar itself is
-always available.
+and **Tree** views and whether it can switch to **historical cycles**. The radar
+itself is always available.
 
 ### Accounts and sign-in
 
@@ -200,10 +209,10 @@ passwords, and deactivate or delete accounts. Where single sign-on (Entra) is
 enabled, those users are provisioned and role-synced automatically from their
 group membership.
 
-## Exploring the radar and list
+## Exploring the radar, list and tree
 
-The radar and the list are two views of the same data — a picture for
-communicating, a table for working.
+The radar, the list and the tree are three views of the same data — a picture for
+communicating, a table for working, and a structure for seeing how things connect.
 
 ### Reading the radar
 
@@ -228,8 +237,10 @@ relevance, people, and the **TRL** and **Time to mainstream** range sliders, or
 ### The group filter
 
 If technologies are organised into families, the **Group** filter shows them as a
-collapsible tree; the **1 / 2 / 3** buttons unfold it to a depth. Selecting a group
-highlights its members — a cross-cutting lens that never moves a dot.
+collapsible tree, with a control above it that unfolds the whole thing to a chosen
+level — numbered buttons while the hierarchy is shallow, a slider once it is deeper
+than six levels. Selecting a group highlights its members — a cross-cutting lens
+that never moves a dot.
 
 ### Movement between cycles
 
@@ -242,6 +253,61 @@ a review on what actually changed.
 The **List** shows the same technologies as a table you can sort, filter by
 registry status, visibility, and completeness, **group by family**, select rows,
 and export. It's the fastest way to scan or bulk-review many technologies.
+
+### The tree view
+
+The **Tree** answers a question neither of the other views can: how technologies
+relate to each other. Nodus records two different kinds of connection, and the
+**Hierarchy** switch in the sidebar chooses between them.
+
+**Groups** draws the _is a kind of_ hierarchy curated under **Manage ▸ Groups**,
+and distinguishes its three kinds of node. A **label group** is a hollow dashed
+square — an umbrella such as _Artificial Intelligence_ with no technology behind
+it, so it never appears on the radar. A **technology group** is a dot inside a
+ring — a real technology that also has children, so it is both a dot and a
+parent. A plain dot is a leaf **technology**.
+
+![The three kinds of node in the group tree](figure:tree-nodes)
+
+**Dependencies** draws the _influences_ graph — `drives`, `hinders`,
+`relates to`. Choose an **anchor** and the tree traces its lineage: prerequisites
+fan out to the left as `LEVEL +1`, `+2`, and what depends on it fans out to the
+right as `LEVEL -1`, `-2`. **Depth** sets how far. Double-click any node to
+re-anchor on it; a single click opens the detail panel instead.
+
+Relations can form loops — two technologies can genuinely depend on each other —
+so a connection that closes a cycle or skips a level is drawn as a faint dotted
+link rather than being hidden. It is the only kind of link that carries an
+arrowhead: every other one steps a single level in the direction the columns
+already read, so an arrow would only repeat what the layout says.
+
+Either hierarchy can be drawn as **Columns**, a generation per lane, or
+**Radial**, with depth as distance from the centre. **Levels** opens the group
+tree to a chosen number of generations, and **Focus** narrows the canvas to one
+node's **Subtree**, its **Siblings** (the row it sits in), or its **Lineage**
+(its path from the root). Pick the node with the sidebar's **Focus on a node…**
+button, or go straight at it — Alt-click (⌥-click on a Mac), or press and hold. Technologies that
+belong to no group have no hierarchy to show, so they wait in a tray at the foot
+of the canvas rather than posing as roots. **Export** saves any of it as SVG,
+PNG or PDF.
+
+![The same tree drawn as columns and as rings](figure:tree-layouts)
+
+Clicking a node opens what it is: a technology's factsheet, or — for a family
+— its **profile**, covering the family's remit, its boundary, and who looks
+after it. Folding a branch has its own **⊖** control beside each parent, so the
+two never compete.
+
+The canvas itself pans by dragging and zooms by scrolling; the sidebar's zoom
+row sets a percentage directly, and **⌂** re-frames the whole tree. Everything
+is reachable from the keyboard too — **Tab** to a node, **Enter** to open it,
+**Alt-Enter** to focus on it.
+
+> **In Nodus** — filtering means something slightly different in each mode. In
+> **Groups** it narrows what is highlighted, keeping the branches that lead to a
+> match so nothing is orphaned from its family. In **Dependencies** it narrows
+> what the lineage may pass through, because a filtered-out technology's
+> dependencies are not the anchor's dependencies.
 
 ## Curating technologies
 
@@ -276,7 +342,11 @@ The modal's own **? Help** button explains each field.
 Two different ways to connect technologies:
 
 - **Part of (groups)** files a technology into a **family** — a hierarchy for
-  navigation and filtering that never moves the dot.
+  navigation and filtering that never moves the dot. A family can carry a
+  **profile** of its own: what it covers, what belongs in it, and who owns it.
+  That is a separate record from any technology's factsheet, because a group
+  that is _also_ a technology needs to say both — and the tree shows them
+  together, the profile above the factsheet.
 - **Relations** record **influence** (drives, driven by, relates to, hinders,
   hindered by) — a graph, shown as connection lines on the radar.
 
@@ -327,7 +397,8 @@ Admins configure the rest of the system from **Manage**. Each page has its own
 ### Segments and groups
 
 **Segments** are the radar's slices and their themes; **Groups** are the optional
-technology families. Together they shape how the picture reads.
+technology families — each with a **Profile** covering its remit, its boundary,
+and the people who look after it. Together they shape how the picture reads.
 
 ### Users and access
 
@@ -336,8 +407,8 @@ sees and can reach. Together they control who can do and see what.
 
 ### Settings and branding
 
-**Settings** covers organisation details, the radar's centre logo, and
-presentation-mode behaviour.
+**Settings** covers organisation details, the radar's centre logo, how deep the
+group hierarchy may nest, and presentation-mode behaviour.
 
 ### Backup, restore, and import
 

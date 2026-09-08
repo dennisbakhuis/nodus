@@ -4,6 +4,12 @@ import { HeroImage } from "../radar/HeroImage";
 import { PeerReferencePanel } from "../radar/PeerReferencePanel";
 import { PersonChip } from "../radar/PersonChip";
 import { getTrlPhase } from "../radar/getTrlPhase";
+import {
+  RELATION_GROUP_COLORS,
+  RELATION_GROUP_ORDER,
+  relationGroupLabel,
+  type RelationGroupKey,
+} from "../radar/relations";
 import { InitiativeEditor } from "./InitiativeEditor";
 import {
   addPersonToTopic,
@@ -1236,42 +1242,6 @@ function AssessmentSection({
   );
 }
 
-type RelationGroupKey =
-  | "Drives"
-  | "Driven By"
-  | "Relates To"
-  | "Hinders"
-  | "Hindered By";
-
-const RELATION_GROUP_ORDER: RelationGroupKey[] = [
-  "Drives",
-  "Driven By",
-  "Relates To",
-  "Hinders",
-  "Hindered By",
-];
-
-const RELATION_GROUP_COLORS: Record<RelationGroupKey, string> = {
-  Drives: "var(--color-brand-dark-blue)",
-  "Driven By": "var(--color-brand-dark-blue)",
-  "Relates To": "var(--color-brand-orange)",
-  Hinders: "#c0392b",
-  "Hindered By": "#c0392b",
-};
-
-function relationGroupLabel(
-  relationType: string,
-  isOutgoing: boolean,
-): RelationGroupKey | string {
-  const t = relationType.toLowerCase().replace(/[_\s]/g, "");
-  if (t === "drives") return isOutgoing ? "Drives" : "Driven By";
-  if (t === "drivenby") return isOutgoing ? "Driven By" : "Drives";
-  if (t === "hinders") return isOutgoing ? "Hinders" : "Hindered By";
-  if (t === "hinderedby") return isOutgoing ? "Hindered By" : "Hinders";
-  if (t === "relatesto") return "Relates To";
-  return relationType;
-}
-
 function PartOfSection({
   detail,
   data,
@@ -1284,7 +1254,11 @@ function PartOfSection({
   const ancestors = detail.group_ancestors ?? [];
   const children = detail.group_children ?? [];
   const siblings = detail.group_siblings ?? [];
-  if (ancestors.length === 0 && children.length === 0 && siblings.length === 0) {
+  if (
+    ancestors.length === 0 &&
+    children.length === 0 &&
+    siblings.length === 0
+  ) {
     return null;
   }
 
@@ -1322,11 +1296,7 @@ function PartOfSection({
       );
     }
     return (
-      <button
-        type="button"
-        style={linkStyle}
-        onClick={() => navTo(b.topic_id)}
-      >
+      <button type="button" style={linkStyle} onClick={() => navTo(b.topic_id)}>
         {b.canonical_name}
       </button>
     );
@@ -1343,15 +1313,17 @@ function PartOfSection({
             alignItems: "center",
             gap: "var(--space-1)",
             marginBottom:
-              children.length > 0 || siblings.length > 0
-                ? "var(--space-3)"
-                : 0,
+              children.length > 0 || siblings.length > 0 ? "var(--space-3)" : 0,
           }}
         >
           {ancestors.map((a, i) => (
             <span
               key={a.topic_id}
-              style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-1)" }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "var(--space-1)",
+              }}
             >
               {briefNode(a)}
               {i < ancestors.length - 1 && (

@@ -29,6 +29,8 @@ class TopicUpdate(BaseModel):
     not_for_external_publication: bool | None = None
     parent_topic_id: uuid.UUID | None = None
     clear_parent: bool = False
+    group_description: str | None = None
+    group_scope: str | None = None
 
 
 class TopicRead(BaseModel):
@@ -39,6 +41,8 @@ class TopicRead(BaseModel):
     slug: str
     not_for_external_publication: bool
     parent_topic_id: uuid.UUID | None = None
+    group_description: str | None = None
+    group_scope: str | None = None
     created_at: datetime
     technology_id: uuid.UUID | None = None
     registry_status: str | None = None
@@ -123,6 +127,10 @@ class GroupTreeNode(BaseModel):
     slug: str
     not_for_external_publication: bool
     on_radar: bool
+    #: Whether the group carries a profile — description, scope, or people.
+    has_profile: bool = False
+    group_description: str | None = None
+    group_scope: str | None = None
     children: list[GroupTreeNode] = []
 
 

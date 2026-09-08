@@ -6,7 +6,7 @@ import { svgToPngDataUrl } from "./svgRaster";
 import { CX, CY, R_INNER, R_OUTER } from "./geometry";
 import { Button } from "../shared/Button";
 
-const NODUS_MARK_HREF = "/nodus_mark.svg";
+export const NODUS_MARK_HREF = "/nodus_mark.svg";
 
 // Viewport units added to the bottom of the cloned viewBox before export.
 // The fit transform on the inner <g> is in CSS px, and the on-screen
@@ -24,10 +24,17 @@ type Props = {
   svgRef: React.RefObject<SVGSVGElement | null>;
   data: RadarData;
   variant?: Variant;
+  /**
+   * Overrides for canvases that are not the radar. The menu itself only needs
+   * a filename stem and something that turns the live SVG into a
+   * self-contained one; everything downstream is shape-agnostic.
+   */
+  fileBase?: string;
+  prepare?: (live: SVGSVGElement) => Promise<SVGSVGElement>;
 };
 
 /** Build a downloadable filename for the active radar cycle. */
-function fileBase(data: RadarData): string {
+export function radarFileBase(data: RadarData): string {
   return `nodus-radar-${data.radar.cycle || "current"}`;
 }
 
@@ -276,7 +283,14 @@ export async function prepareExportSvg(
   return clone;
 }
 
-export function ExportMenu({ svgRef, data, variant = "sidebar" }: Props) {
+export function ExportMenu({
+  svgRef,
+  data,
+  variant = "sidebar",
+  fileBase: fileBaseProp,
+  prepare = prepareExportSvg,
+}: Props) {
+  const base = fileBaseProp ?? radarFileBase(data);
   const [open, setOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -329,11 +343,11 @@ export function ExportMenu({ svgRef, data, variant = "sidebar" }: Props) {
     const live = svgRef.current;
     if (!live) return;
     await withBusy(async () => {
-      const exported = await prepareExportSvg(live);
+      const exported = await prepare(live);
       const blob = new Blob([radarSvgString(exported)], {
         type: "image/svg+xml;charset=utf-8",
       });
-      downloadBlob(blob, `${fileBase(data)}.svg`);
+      downloadBlob(blob, `${base}.svg`);
     });
   }
 
@@ -341,7 +355,7 @@ export function ExportMenu({ svgRef, data, variant = "sidebar" }: Props) {
     const live = svgRef.current;
     if (!live) return;
     await withBusy(async () => {
-      const exported = await prepareExportSvg(live);
+      const exported = await prepare(live);
       const dataUrl = await svgToPngDataUrl(
         exported,
         radarSvgString(exported),
@@ -349,7 +363,7 @@ export function ExportMenu({ svgRef, data, variant = "sidebar" }: Props) {
       );
       const a = document.createElement("a");
       a.href = dataUrl;
-      a.download = `${fileBase(data)}.png`;
+      a.download = `${base}.png`;
       a.click();
     });
   }
@@ -360,7 +374,7 @@ export function ExportMenu({ svgRef, data, variant = "sidebar" }: Props) {
     const live = svgRef.current;
     if (!live) return;
     await withBusy(async () => {
-      const exported = await prepareExportSvg(live);
+      const exported = await prepare(live);
       const w =
         exported.viewBox.baseVal.width ||
         Number(exported.getAttribute("width")) ||
@@ -379,7 +393,7 @@ export function ExportMenu({ svgRef, data, variant = "sidebar" }: Props) {
       await withOffscreen(exported, () =>
         svg2pdf(exported, pdf, { x: 0, y: 0, width: w, height: h }),
       );
-      pdf.save(`${fileBase(data)}.pdf`);
+      pdf.save(`${base}.pdf`);
     });
   }
 
@@ -394,7 +408,7 @@ export function ExportMenu({ svgRef, data, variant = "sidebar" }: Props) {
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={exporting}
-        title="Export radar"
+        title="Export view"
         variant={variant}
       >
         {exporting ? "…" : "↓ Export"}

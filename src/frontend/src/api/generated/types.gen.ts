@@ -478,6 +478,20 @@ export type GroupTreeNode = {
      */
     on_radar: boolean;
     /**
+     * Has Profile
+     *
+     * Whether the group carries a profile — description, scope, or people.
+     */
+    has_profile?: boolean;
+    /**
+     * Group Description
+     */
+    group_description?: string | null;
+    /**
+     * Group Scope
+     */
+    group_scope?: string | null;
+    /**
      * Children
      */
     children?: Array<GroupTreeNode>;
@@ -2172,6 +2186,14 @@ export type TopicRead = {
      */
     parent_topic_id?: string | null;
     /**
+     * Group Description
+     */
+    group_description?: string | null;
+    /**
+     * Group Scope
+     */
+    group_scope?: string | null;
+    /**
      * Created At
      */
     created_at: string;
@@ -2219,6 +2241,14 @@ export type TopicUpdate = {
      * Clear Parent
      */
     clear_parent?: boolean;
+    /**
+     * Group Description
+     */
+    group_description?: string | null;
+    /**
+     * Group Scope
+     */
+    group_scope?: string | null;
 };
 
 /**

@@ -98,6 +98,7 @@ Regenerates `src/api/generated.ts` from the live OpenAPI schema at `http://local
 | `/radar` | Interactive radar (180° semicircle default) |
 | `/radar/:slug` | Radar with detail panel open |
 | `/list` | List view (tabular) |
+| `/tree` | Tree view (group hierarchy + dependency lineage) |
 | `/manage` | Management landing |
 | `/manage/technologies` | Registry browse |
 | `/manage/technologies/:slug` | Factsheet editor |

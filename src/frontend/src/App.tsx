@@ -25,6 +25,7 @@ import { VisibilityPage } from "./manage/VisibilityPage";
 import { BackupPage } from "./manage/BackupPage";
 import { ImportPage } from "./manage/ImportPage";
 import { GuidePage } from "./guide/GuidePage";
+import { TreePage } from "./tree/TreePage";
 
 /**
  * Routes wrapper that resets the route-level ErrorBoundary on navigation —
@@ -46,6 +47,18 @@ function RoutedContent() {
           element={
             <CapabilityRoute capability="canViewList">
               <ListPage />
+            </CapabilityRoute>
+          }
+        />
+        {/* The tree fetches every registry status so it can tell a label group
+            from a Backlog technology, so it sits behind the same capability
+            that already gates the list rather than exposing Backlog and
+            Archive names to public readers. */}
+        <Route
+          path="/tree"
+          element={
+            <CapabilityRoute capability="canViewList">
+              <TreePage />
             </CapabilityRoute>
           }
         />

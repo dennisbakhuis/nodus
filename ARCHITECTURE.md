@@ -12,7 +12,7 @@ High-level architecture of Nodus. For the conceptual methodology the app impleme
 │ (Vite / React / D3.js)  │         │ (FastAPI / SQLAlchemy)   │
 │                         │         │                          │
 │ - Radar view            │         │ - REST API under /api/*  │
-│ - List / detail views   │         │ - Auth (local / Entra)   │
+│ - List / tree / detail  │         │ - Auth (local / Entra)   │
 │ - Admin / manage UI     │         │ - Swagger UI / ReDoc     │
 │ - PDF export (jsPDF)    │         │ - CLI (uv run nodus ...) │
 └─────────────────────────┘         └────────────┬─────────────┘
@@ -115,6 +115,7 @@ nodus/
 │       ├── src/
 │       │   ├── radar/          D3.js radar view
 │       │   ├── list/           List view
+│       │   ├── tree/           Group + dependency tree view
 │       │   ├── topic-detail/   Topic detail page
 │       │   ├── manage/         Admin/Writer management UI
 │       │   ├── shared/         Cross-view components

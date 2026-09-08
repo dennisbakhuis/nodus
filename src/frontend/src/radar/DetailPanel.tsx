@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { RadarEntry, RadarData, TechnologyRelation } from "./types";
 import { getTopic } from "../api/client";
 import { listMovements } from "../manage/api";
@@ -17,6 +17,23 @@ type Props = {
   onNavigate: (entry: RadarEntry) => void;
   onExpand?: () => void;
   disabled?: boolean;
+  /**
+   * Whether selecting an entry rewrites the address bar to `<basePath>/<slug>`.
+   *
+   * The rewrite replaces the entire URL, query string included, so any surface
+   * that keeps its own view state in search params must opt out and own its
+   * URL itself rather than have it silently discarded here.
+   */
+  syncUrl?: boolean;
+  /** Route prefix used when `syncUrl` is on. */
+  basePath?: string;
+  /**
+   * Extra content above the factsheet.
+   *
+   * The tree uses it for a group profile: a technology that also heads a
+   * family has two things to say, and the factsheet only says one of them.
+   */
+  extraSection?: ReactNode;
 };
 
 type MovementEvent = {
@@ -43,6 +60,9 @@ export function DetailPanel({
   onNavigate,
   onExpand,
   disabled = false,
+  syncUrl = true,
+  basePath = "/radar",
+  extraSection,
 }: Props) {
   const { canOpenFullTopicModal: canExpand } = useAuth();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -54,7 +74,9 @@ export function DetailPanel({
 
   useEffect(() => {
     if (!entry) return;
-    window.history.replaceState({}, "", `/radar/${entry.slug}`);
+    if (syncUrl) {
+      window.history.replaceState({}, "", `${basePath}/${entry.slug}`);
+    }
     setLoading(true);
     setDetail(null);
     setMovements([]);
@@ -81,7 +103,7 @@ export function DetailPanel({
         setDetail(null);
       })
       .finally(() => setLoading(false));
-  }, [entry]);
+  }, [entry, syncUrl, basePath]);
 
   useEffect(() => {
     if (entry) {
@@ -417,6 +439,18 @@ export function DetailPanel({
             >
               Loading…
             </p>
+          )}
+
+          {extraSection && (
+            <div
+              style={{
+                marginBottom: "var(--space-5)",
+                paddingBottom: "var(--space-4)",
+                borderBottom: "1px solid var(--color-border)",
+              }}
+            >
+              {extraSection}
+            </div>
           )}
 
           {detail && entry && (

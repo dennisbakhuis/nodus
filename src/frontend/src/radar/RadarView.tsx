@@ -36,6 +36,8 @@ import {
   halfArcPath,
   hash01,
   segBandPath,
+  viewBoxMapping,
+  cssPanToUserUnits,
 } from "./geometry";
 import {
   MOVEMENT_COLORS,
@@ -845,6 +847,19 @@ export function RadarView({
     sortedSegments,
   ]);
 
+  // Bumped whenever the container resizes, so the transform below re-derives
+  // the viewBox mapping. Without it a resize that does not also change zoom or
+  // translate — a resize while focus mode is active — would leave the applied
+  // transform converted against a stale scale.
+  const [viewportTick, setViewportTick] = useState(0);
+  useLayoutEffect(() => {
+    const el = svgContainerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setViewportTick((n) => n + 1));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   useLayoutEffect(() => {
     const g = rootGRef.current;
     if (!g) return;
@@ -855,8 +870,25 @@ export function RadarView({
     // SVG subtree.
     g.style.willChange = "transform";
     g.style.transition = rootTransitionRef.current;
-    g.style.transform = `translate(${translate.x}px, ${translate.y}px) scale(${zoom})`;
-  }, [zoom, translate]);
+
+    // `translate` is in CSS pixels, but a CSS transform on SVG content applies
+    // in user units, which the viewBox then scales. Convert once, here, so the
+    // fit, wheel and drag maths can all keep reasoning in CSS pixels.
+    const svg = g.ownerSVGElement;
+    const container = svgContainerRef.current;
+    const mapping =
+      svg && container
+        ? viewBoxMapping(
+            svg.getBoundingClientRect(),
+            container.getBoundingClientRect(),
+          )
+        : null;
+    const applied = mapping
+      ? cssPanToUserUnits(translate, zoom, mapping)
+      : translate;
+
+    g.style.transform = `translate(${applied.x}px, ${applied.y}px) scale(${zoom})`;
+  }, [zoom, translate, viewportTick]);
 
   // Initial fit + recompute on container resize and after fonts load (label
   // widths change once webfonts swap in, which shifts the bbox). Depends on

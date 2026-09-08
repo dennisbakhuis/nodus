@@ -20,6 +20,7 @@ type Route = HelpPage & {
 const routes: Route[] = [
   { match: /^\/radar(\/|$)/, slug: "radar", title: "Radar view" },
   { match: /^\/list(\/|$)/, slug: "list", title: "Technology list" },
+  { match: /^\/tree(\/|$)/, slug: "tree", title: "Tree view" },
   { match: /^\/manage\/cycles/, slug: "manage-cycles", title: "Cycles" },
   { match: /^\/manage\/settings/, slug: "manage-settings", title: "Settings" },
   { match: /^\/manage\/segments/, slug: "manage-segments", title: "Segments" },
