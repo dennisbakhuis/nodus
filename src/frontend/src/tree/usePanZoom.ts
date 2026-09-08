@@ -36,6 +36,7 @@ type Options = {
 export function usePanZoom({ fitKey, onZoomChange }: Options) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rootGRef = useRef<SVGGElement>(null);
+  const contentGRef = useRef<SVGGElement>(null);
 
   const [zoom, setZoomState] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -61,12 +62,19 @@ export function usePanZoom({ fitKey, onZoomChange }: Options) {
     g.style.transformOrigin = "0 0";
     // Promotes the group to its own compositor layer. Without it WebKit leaves
     // paint trails during rapid pan/zoom of a CSS-transformed SVG subtree.
+    // Promoted layers are composited from their own backing store, and a
+    // transparent one lets Chrome skip invalidating regions it already painted
+    // — text especially. The caller paints an opaque backdrop inside this group
+    // so the layer always has something to overwrite the previous frame with.
     g.style.willChange = "transform";
     g.style.transform = `translate(${translate.x}px, ${translate.y}px) scale(${zoom})`;
   }, [zoom, translate]);
 
   const applyFit = useCallback(() => {
-    const g = rootGRef.current;
+    // Measures the content group, not the transformed root: the root also
+    // carries the opaque backdrop, whose whole point is to be larger than the
+    // content and which would otherwise dominate the fit.
+    const g = contentGRef.current;
     const wrapper = wrapperRef.current;
     if (!g || !wrapper) return;
     let box: DOMRect;
@@ -193,6 +201,7 @@ export function usePanZoom({ fitKey, onZoomChange }: Options) {
   return {
     wrapperRef,
     rootGRef,
+    contentGRef,
     zoom,
     translate,
     fitZoom,

@@ -14,10 +14,16 @@ import { SearchBox } from "./SearchBox";
 import { themeByKey, SEGMENT_THEMES } from "./segmentThemes";
 import { useAuth } from "../shared/AuthContext";
 import { Chip as SharedChip } from "../shared/Chip";
+import { altKeyLabel } from "../shared/platform";
 import { CyclePicker } from "../shared/CyclePicker";
 import { NodusFooterLink } from "../shared/NodusFooterLink";
 import { ResizeHandle, useResizableWidth } from "../shared/useResizableWidth";
 import { useReadOnlyRadar } from "./ReadOnlyRadarContext";
+import { GroupDepthPicker } from "./GroupDepthPicker";
+// One ramp for the whole product. The sidebar used to keep a four-colour copy
+// of its own, so a level was one colour in the filter tree and another in the
+// tree view.
+import { groupDepthColor } from "../tree/treeEncodings";
 import { useConfirm } from "../shared/ConfirmDialog";
 import {
   createSegment,
@@ -43,13 +49,6 @@ function flattenGroupTree(
     }
   }
   return out;
-}
-
-/** Per-depth accent colours for the group tree (guide lines, disclosure). */
-const GROUP_DEPTH_COLORS = ["#2d8bc9", "#7c3aed", "#1b7b34", "#e08a00"];
-
-function groupDepthColor(depth: number): string {
-  return GROUP_DEPTH_COLORS[depth % GROUP_DEPTH_COLORS.length] as string;
 }
 
 const TREE_ROW_H = 24;
@@ -181,6 +180,22 @@ type Props = {
      colorMode and shapeMode already do. --- */
   treeMode?: "groups" | "deps";
   onTreeModeChange?: (mode: "groups" | "deps") => void;
+  treeShape?: "columns" | "radial";
+  onTreeShapeChange?: (shape: "columns" | "radial") => void;
+  ungroupedInTree?: boolean;
+  onUngroupedInTreeChange?: (inTree: boolean) => void;
+  ungroupedCount?: number;
+  treeLevels?: number | "all";
+  onTreeLevelsChange?: (levels: number | "all") => void;
+  /** Generations present in the forest, which bounds the level buttons. */
+  treeMaxLevels?: number;
+  focusName?: string | null;
+  onFocusClear?: () => void;
+  /** Whether the canvas is armed to pick a focus target on the next click. */
+  focusPicking?: boolean;
+  onFocusPickingChange?: (picking: boolean) => void;
+  focusScope?: "subtree" | "siblings" | "lineage";
+  onFocusScopeChange?: (scope: "subtree" | "siblings" | "lineage") => void;
   treeDepth?: 1 | 2 | 3;
   onTreeDepthChange?: (depth: 1 | 2 | 3) => void;
   anchorName?: string | null;
@@ -211,6 +226,20 @@ export function Sidebar({
   onCollapse,
   treeMode = "groups",
   onTreeModeChange,
+  treeShape = "columns",
+  onTreeShapeChange,
+  ungroupedInTree = false,
+  onUngroupedInTreeChange,
+  ungroupedCount = 0,
+  treeLevels = "all",
+  onTreeLevelsChange,
+  treeMaxLevels = 1,
+  focusName = null,
+  onFocusClear,
+  focusPicking = false,
+  onFocusPickingChange,
+  focusScope = "subtree",
+  onFocusScopeChange,
   treeDepth = 2,
   onTreeDepthChange,
   anchorName = null,
@@ -651,6 +680,167 @@ export function Sidebar({
               />
             </div>
 
+            {treeMode === "groups" && (
+              <>
+                <SectionHeader label="Layout" resetLabel="Reset layout" />
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "var(--space-1)",
+                  }}
+                >
+                  <Chip
+                    active={treeShape === "columns"}
+                    onClick={() => onTreeShapeChange?.("columns")}
+                    label="Columns"
+                  />
+                  <Chip
+                    active={treeShape === "radial"}
+                    onClick={() => onTreeShapeChange?.("radial")}
+                    label="Radial"
+                  />
+                </div>
+
+                {treeMaxLevels > 1 && (
+                  <>
+                    <SectionHeader label="Levels" resetLabel="Reset levels" />
+                    <LevelSlider
+                      max={treeMaxLevels}
+                      value={treeLevels}
+                      onChange={(v) => onTreeLevelsChange?.(v)}
+                    />
+                  </>
+                )}
+
+                <SectionHeader
+                  label="Focus"
+                  onReset={focusName ? onFocusClear : undefined}
+                  resetLabel="Clear focus"
+                />
+                {focusName ? (
+                  <div
+                    style={{
+                      fontSize: "var(--font-size-xs)",
+                      color: "var(--color-dark-text)",
+                      padding: "2px 0",
+                    }}
+                  >
+                    {focusName}
+                  </div>
+                ) : (
+                  /* The gesture used to be documented here and nowhere else,
+                     which asked the reader to already know it before they
+                     could find it. The button is the discoverable route; the
+                     shortcuts under it are for the second visit. */
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onFocusPickingChange?.(!focusPicking)}
+                      aria-pressed={focusPicking}
+                      style={{
+                        width: "100%",
+                        marginTop: 2,
+                        padding: "4px 8px",
+                        border: `1px solid ${
+                          focusPicking
+                            ? "var(--color-brand-dark-blue)"
+                            : "var(--color-border-strong)"
+                        }`,
+                        borderRadius: "var(--radius-sm)",
+                        background: focusPicking
+                          ? "var(--color-brand-dark-blue)"
+                          : "var(--color-white)",
+                        color: focusPicking
+                          ? "var(--color-white)"
+                          : "var(--color-dark-text)",
+                        fontFamily: "var(--font-family)",
+                        fontSize: "var(--font-size-xs)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {focusPicking ? "Pick a node… (Esc)" : "Focus on a node…"}
+                    </button>
+                    <div
+                      style={{
+                        fontSize: "var(--font-size-xs)",
+                        color: "var(--color-muted-text)",
+                        padding: "3px 0 0",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      or {altKeyLabel()}-click a node, or press and hold it
+                    </div>
+                  </>
+                )}
+                {focusName && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "var(--space-1)",
+                      marginTop: "var(--space-1)",
+                    }}
+                  >
+                    {(
+                      [
+                        [
+                          "subtree",
+                          "Subtree",
+                          "This node and everything under it",
+                        ],
+                        [
+                          "siblings",
+                          "Siblings",
+                          "The row it sits in, peers included",
+                        ],
+                        [
+                          "lineage",
+                          "Lineage",
+                          "Its path from the root, plus its subtree",
+                        ],
+                      ] as const
+                    ).map(([scope, label, description]) => (
+                      <Chip
+                        key={scope}
+                        active={focusScope === scope}
+                        onClick={() => onFocusScopeChange?.(scope)}
+                        label={label}
+                        ariaLabel={description}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {ungroupedCount > 0 && (
+                  <>
+                    <SectionHeader
+                      label={`Ungrouped (${ungroupedCount})`}
+                      resetLabel="Reset ungrouped"
+                    />
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "var(--space-1)",
+                      }}
+                    >
+                      <Chip
+                        active={!ungroupedInTree}
+                        onClick={() => onUngroupedInTreeChange?.(false)}
+                        label="In tray"
+                      />
+                      <Chip
+                        active={ungroupedInTree}
+                        onClick={() => onUngroupedInTreeChange?.(true)}
+                        label="As roots"
+                      />
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
             {treeMode === "deps" && (
               <>
                 <SectionHeader label="Depth" resetLabel="Reset depth" />
@@ -1070,51 +1260,7 @@ export function Sidebar({
             gap: "var(--space-2)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <SectionLabel>Group</SectionLabel>
-            {maxGroupDepth > 0 && (
-              <span
-                style={{ display: "flex", gap: 2, alignItems: "center" }}
-                title="Unfold the tree up to this level"
-              >
-                {Array.from(
-                  { length: Math.min(3, maxGroupDepth + 1) },
-                  (_, i) => i + 1,
-                ).map((level) => {
-                  const levelColor = groupDepthColor(level - 1);
-                  const levelActive = activeExpandLevel === level;
-                  return (
-                    <button
-                      key={level}
-                      type="button"
-                      onClick={() => expandGroupsToLevel(level)}
-                      aria-label={`Expand to level ${level}`}
-                      aria-pressed={levelActive}
-                      title={`Unfold to level ${level}`}
-                      style={{
-                        width: 18,
-                        height: 18,
-                        padding: 0,
-                        border: `1px solid ${levelColor}`,
-                        borderRadius: 4,
-                        background: levelActive
-                          ? levelColor
-                          : "var(--color-white)",
-                        color: levelActive ? "var(--color-white)" : levelColor,
-                        fontSize: 10,
-                        fontWeight: "var(--font-weight-bold)",
-                        lineHeight: 1,
-                        cursor: "pointer",
-                        fontFamily: "var(--font-family)",
-                      }}
-                    >
-                      {level}
-                    </button>
-                  );
-                })}
-              </span>
-            )}
-          </div>
+          <SectionLabel>Group</SectionLabel>
           {filters.groupId != null && (
             <ResetButton
               onClick={() => onFiltersChange({ ...filters, groupId: null })}
@@ -1122,6 +1268,13 @@ export function Sidebar({
             />
           )}
         </div>
+        {maxGroupDepth > 0 && (
+          <GroupDepthPicker
+            levels={maxGroupDepth + 1}
+            active={activeExpandLevel}
+            onPick={expandGroupsToLevel}
+          />
+        )}
         {groupTree.length === 0 ? (
           <div
             style={{
@@ -1574,12 +1727,14 @@ function Chip({
   active,
   onClick,
   label,
+  ariaLabel,
   inactiveBg,
   inactiveText,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
+  ariaLabel?: string;
   inactiveBg?: string;
   inactiveText?: string;
 }) {
@@ -1588,11 +1743,67 @@ function Chip({
       variant="filter"
       active={active}
       onClick={onClick}
+      ariaLabel={ariaLabel}
       inactiveBg={inactiveBg}
       inactiveText={inactiveText}
     >
       {label}
     </SharedChip>
+  );
+}
+
+/**
+ * Depth picker for the group tree.
+ *
+ * A chip per level stopped scaling once group nesting became configurable up
+ * to twelve — a dozen one-character buttons is a worse target than a single
+ * track. The top of the track is "All" rather than the deepest number so the
+ * choice survives the forest growing another level.
+ */
+function LevelSlider({
+  max,
+  value,
+  onChange,
+}: {
+  max: number;
+  value: number | "all";
+  onChange: (value: number | "all") => void;
+}) {
+  const current = value === "all" ? max : Math.min(value, max);
+  const readout =
+    value === "all" ? `All ${max} levels` : `${current} of ${max} levels`;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {/* Above the track rather than beside it: the rail is narrow, and a
+          number squeezed into the margin has no room to say what it counts. */}
+      <span
+        style={{
+          fontSize: "var(--font-size-xs)",
+          fontWeight: "var(--font-weight-medium)",
+          color: "var(--color-dark-text)",
+        }}
+      >
+        {readout}
+      </span>
+      <input
+        type="range"
+        min={1}
+        max={max}
+        step={1}
+        value={current}
+        aria-label="Levels of the group tree to show"
+        aria-valuetext={readout}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          onChange(next >= max ? "all" : next);
+        }}
+        style={{
+          width: "100%",
+          minWidth: 0,
+          accentColor: "var(--color-active-filter)",
+        }}
+      />
+    </div>
   );
 }
 

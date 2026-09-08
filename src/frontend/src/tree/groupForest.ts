@@ -43,6 +43,9 @@ export type GroupNode = {
   topicId: string;
   name: string;
   slug: string;
+  /** What the family covers, and what belongs in it. Parents only. */
+  description: string | null;
+  scope: string | null;
   kind: TreeNodeKind;
   /** The radar entry behind this node, or `null` for a label group. */
   entry: RadarEntry | null;
@@ -60,17 +63,21 @@ export function classifyNode(
 }
 
 /**
- * Build the complete group forest.
+ * Split the population into the part that forms a hierarchy and the part that
+ * does not.
+ *
+ * A technology belonging to no group has nothing tree-like to show: rendering
+ * it as a depth-0 root puts it in the same column as real roots and makes a
+ * shallow forest look like a list. Callers decide where the loose ones go —
+ * `buildGroupForest` folds them back in, the tree view parks them in a tray.
  *
  * `entries` must come from a snapshot requested with every registry status, or
  * Backlog and Archive technologies will be misclassified as label groups.
- * Technologies that belong to no group are appended as roots so the tree shows
- * the whole population rather than only the grouped part of it.
  */
-export function buildGroupForest(
+export function partitionForest(
   tree: GroupTreeNode[],
   entries: RadarEntry[],
-): GroupNode[] {
+): { grouped: GroupNode[]; ungrouped: GroupNode[] } {
   const entryByTopic = new Map<string, RadarEntry>();
   for (const entry of entries) entryByTopic.set(entry.topic_id, entry);
 
@@ -86,6 +93,8 @@ export function buildGroupForest(
         topicId: node.topic_id,
         name: node.canonical_name,
         slug: node.slug,
+        description: node.group_description ?? null,
+        scope: node.group_scope ?? null,
         kind: classifyNode(entry !== null, children.length > 0),
         entry,
         children,
@@ -94,7 +103,9 @@ export function buildGroupForest(
     });
   }
 
-  const roots = build(tree, 0);
+  const byName = (a: GroupNode, b: GroupNode) => a.name.localeCompare(b.name);
+
+  const grouped = build(tree, 0).sort(byName);
 
   const ungrouped = entries
     .filter((entry) => !seen.has(entry.topic_id))
@@ -102,13 +113,32 @@ export function buildGroupForest(
       topicId: entry.topic_id,
       name: entry.canonical_name,
       slug: entry.slug,
+      description: null,
+      scope: null,
       kind: "technology",
       entry,
       children: [],
       depth: 0,
-    }));
+    }))
+    .sort(byName);
 
-  return [...roots, ...ungrouped].sort((a, b) => a.name.localeCompare(b.name));
+  return { grouped, ungrouped };
+}
+
+/**
+ * The whole population as one forest, loose technologies included as roots.
+ *
+ * Kept as the default reading of "the group forest"; the tree view asks for
+ * `partitionForest` instead so it can hold the loose ones out of the columns.
+ */
+export function buildGroupForest(
+  tree: GroupTreeNode[],
+  entries: RadarEntry[],
+): GroupNode[] {
+  const { grouped, ungrouped } = partitionForest(tree, entries);
+  return [...grouped, ...ungrouped].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
 }
 
 /** Depth-first walk yielding every node in the forest. */
@@ -148,4 +178,80 @@ export function pruneForest(
 
   const nodes = forest.map(prune).filter((n): n is GroupNode => n !== null);
   return { nodes, connectorOnly };
+}
+
+/**
+ * Which slice of the forest a focused node stands for.
+ *
+ * - `subtree` — the node and everything under it.
+ * - `siblings` — the row the node sits in: its parent's children, each with
+ *   their own subtree. This is the "show me Generative AI and the things it
+ *   sits alongside" reading, and it is the only one that keeps the node's
+ *   peers rather than its relatives.
+ * - `lineage` — the path from the containing root down to the node, with only
+ *   the on-path child kept at each step, plus the node's full subtree.
+ */
+export type FocusScope = "subtree" | "siblings" | "lineage";
+
+/** Path from a containing root down to `topicId`, or null if it is absent. */
+function pathTo(forest: GroupNode[], topicId: string): GroupNode[] | null {
+  function walk(node: GroupNode, trail: GroupNode[]): GroupNode[] | null {
+    const here = [...trail, node];
+    if (node.topicId === topicId) return here;
+    for (const child of node.children) {
+      const found = walk(child, here);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const root of forest) {
+    const found = walk(root, []);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Narrow the forest to the slice `topicId` names under `scope`.
+ *
+ * Returns an empty forest when the id is absent, which is what the caller
+ * wants after a filter has pruned the focused branch away entirely.
+ */
+export function focusForest(
+  forest: GroupNode[],
+  topicId: string | null,
+  scope: FocusScope = "subtree",
+): GroupNode[] {
+  if (!topicId) return forest;
+  const path = pathTo(forest, topicId);
+  if (!path) return [];
+  const node = path[path.length - 1]!;
+
+  if (scope === "subtree") return [node];
+
+  if (scope === "siblings") {
+    const parent = path.length >= 2 ? path[path.length - 2] : null;
+    // A root's siblings are the other roots, which is the whole forest.
+    return parent ? parent.children : forest;
+  }
+
+  // Rebuild the ancestor chain from the node upwards, dropping the branches
+  // that lead nowhere near it.
+  return [
+    path
+      .slice(0, -1)
+      .reduceRight<GroupNode>(
+        (child, ancestor) => ({ ...ancestor, children: [child] }),
+        node,
+      ),
+  ];
+}
+
+/** Ids of every node in the forest at or above `depth`, for expand-to-level. */
+export function idsToDepth(forest: GroupNode[], maxDepth: number): Set<string> {
+  return new Set(
+    walkForest(forest)
+      .filter((node) => node.depth <= maxDepth)
+      .map((node) => node.topicId),
+  );
 }

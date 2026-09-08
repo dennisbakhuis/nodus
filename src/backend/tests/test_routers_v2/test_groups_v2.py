@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 from app.models.segment import Segment
 from app.models.technology import RegistryStatus, Technology
 from app.models.topic import Topic
+from app.services.grouping import DEFAULT_GROUP_DEPTH, GROUP_DEPTH_HARD_LIMIT
 
 
 def _on_radar(session: Session, name: str, parent: Topic | None = None) -> Topic:
@@ -94,11 +95,38 @@ class TestRejectedParents:
         assert resp.status_code == 422
 
     def test_exceeding_max_depth_422(self, client: TestClient) -> None:
-        # MAX_GROUP_DEPTH = 5: build a 5-deep chain, a 6th parent assignment fails.
+        # Default limit is 8: build an 8-deep chain, a 9th parent assignment fails.
         prev = _create_topic(client, "L1")
-        for i in range(2, 6):
+        for i in range(2, DEFAULT_GROUP_DEPTH + 1):
             prev = _create_topic(client, f"L{i}", parent_id=prev["id"])
-        extra = _create_topic(client, "L6")
+        extra = _create_topic(client, f"L{DEFAULT_GROUP_DEPTH + 1}")
+        resp = client.patch(
+            f"/api/topics/{extra['id']}", json={"parent_topic_id": prev["id"]}
+        )
+        assert resp.status_code == 422
+
+    def test_max_depth_follows_the_setting(self, client: TestClient) -> None:
+        """Lowering the setting rejects nesting the default would have allowed."""
+        client.put("/api/settings/groups.max_depth", json={"value": "3"})
+        prev = _create_topic(client, "S1")
+        for i in range(2, 4):
+            prev = _create_topic(client, f"S{i}", parent_id=prev["id"])
+        extra = _create_topic(client, "S4")
+        resp = client.patch(
+            f"/api/topics/{extra['id']}", json={"parent_topic_id": prev["id"]}
+        )
+        assert resp.status_code == 422
+        assert "maximum depth of 3" in resp.json()["detail"]
+
+    def test_max_depth_setting_is_clamped_to_the_hard_limit(
+        self, client: TestClient
+    ) -> None:
+        """A setting past the ceiling is capped, not honoured."""
+        client.put("/api/settings/groups.max_depth", json={"value": "999"})
+        prev = _create_topic(client, "H1")
+        for i in range(2, GROUP_DEPTH_HARD_LIMIT + 1):
+            prev = _create_topic(client, f"H{i}", parent_id=prev["id"])
+        extra = _create_topic(client, f"H{GROUP_DEPTH_HARD_LIMIT + 1}")
         resp = client.patch(
             f"/api/topics/{extra['id']}", json={"parent_topic_id": prev["id"]}
         )
@@ -199,6 +227,54 @@ class TestSeedHierarchy:
         # Re-running links nothing new.
         assert seed_dummy(session)["groups"] == 0
 
+    def test_seed_profiles_every_parent_and_never_overwrites(self, session: Session) -> None:
+        from app.seed.dummy import GROUP_PROFILES, seed_dummy
+
+        counts = seed_dummy(session)
+        assert counts["group_profiles"] == len(GROUP_PROFILES) * 2
+
+        by_slug = {t.slug: t for t in session.exec(select(Topic)).all()}
+        for slug, _, _ in GROUP_PROFILES:
+            assert by_slug[slug].group_description
+            assert by_slug[slug].group_scope
+        # Only parents get one; a leaf has no family to describe.
+        assert by_slug["multi-agent-systems"].group_description is None
+
+        edited = by_slug["generative-ai"]
+        edited.group_description = "Our own wording."
+        session.add(edited)
+        session.commit()
+
+        # A re-seed must not throw away what an operator wrote over the top.
+        assert seed_dummy(session)["group_profiles"] == 0
+        session.refresh(edited)
+        assert edited.group_description == "Our own wording."
+
+    def test_seed_links_group_people_once(self, session: Session) -> None:
+        from app.models.person import Person
+        from app.models.topic_person_link import TopicPersonLink
+        from app.seed.dummy import GROUP_PEOPLE, seed_dummy
+
+        assert seed_dummy(session)["group_people"] == len(GROUP_PEOPLE)
+
+        by_slug = {t.slug: t for t in session.exec(select(Topic)).all()}
+        links = {
+            (by_id_slug, link.link_role)
+            for link in session.exec(select(TopicPersonLink)).all()
+            for by_id_slug in [
+                next(s for s, t in by_slug.items() if t.id == link.topic_id)
+            ]
+        }
+        assert ("artificial-intelligence", "Owner") in links
+        assert ("ai-agents", "SubjectMatterExpert") in links
+
+        # One Person for both roles, and a re-seed adds neither a second
+        # profile nor a duplicate link.
+        people = session.exec(select(Person).where(Person.full_name == "Dennis Bakhuis")).all()
+        assert len(people) == 1
+        assert seed_dummy(session)["group_people"] == 0
+        assert len(session.exec(select(TopicPersonLink)).all()) == len(GROUP_PEOPLE)
+
 
 class TestRadarPayloadGrouping:
     def test_ancestor_path_and_root(self, client: TestClient, session: Session) -> None:
@@ -245,3 +321,51 @@ class TestRadarPayloadGrouping:
         assert child_entry["ancestor_path"] == []
         assert child_entry["root_group_id"] == str(child.id)
         assert child_entry["parent_topic_id"] is None
+
+
+class TestGroupProfile:
+    """The `group_*` fields describe a Topic as a parent, not as a technology."""
+
+    def test_description_and_scope_round_trip(self, client: TestClient) -> None:
+        group = _create_topic(client, "Generative AI")
+        resp = client.patch(
+            f"/api/topics/{group['id']}",
+            json={
+                "group_description": "Models that produce new content.",
+                "group_scope": "Model families. Not the apps built on them.",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["group_description"] == "Models that produce new content."
+        assert body["group_scope"] == "Model families. Not the apps built on them."
+
+        listed = {t["id"]: t for t in client.get("/api/topics").json()}
+        assert listed[group["id"]]["group_description"] == "Models that produce new content."
+
+    def test_blank_clears_but_omitted_leaves_alone(self, client: TestClient) -> None:
+        group = _create_topic(client, "Platforms")
+        client.patch(f"/api/topics/{group['id']}", json={"group_description": "A remit."})
+
+        # Renaming must not wipe a profile the caller never mentioned.
+        renamed = client.patch(
+            f"/api/topics/{group['id']}", json={"canonical_name": "Platform Engineering"}
+        ).json()
+        assert renamed["group_description"] == "A remit."
+
+        cleared = client.patch(
+            f"/api/topics/{group['id']}", json={"group_description": "   "}
+        ).json()
+        assert cleared["group_description"] is None
+
+    def test_tree_flags_which_groups_carry_a_profile(self, client: TestClient) -> None:
+        parent = _create_topic(client, "Umbrella")
+        _create_topic(client, "Documented", parent_id=parent["id"])
+        topics = {t["canonical_name"]: t for t in client.get("/api/topics").json()}
+        documented = topics["Documented"]
+        client.patch(f"/api/topics/{documented['id']}", json={"group_scope": "What belongs here."})
+
+        roots = {n["canonical_name"]: n for n in client.get("/api/topics/groups-tree").json()}
+        umbrella = roots["Umbrella"]
+        assert umbrella["has_profile"] is False
+        assert umbrella["children"][0]["has_profile"] is True

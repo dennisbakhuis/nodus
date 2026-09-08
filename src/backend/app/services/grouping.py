@@ -9,9 +9,35 @@ import uuid
 
 from sqlmodel import Session, select
 
+from app.models.setting import Setting
 from app.models.topic import Topic
 
-MAX_GROUP_DEPTH = 5
+#: Setting key holding the deployment's chosen nesting limit.
+GROUP_DEPTH_SETTING_KEY = "groups.max_depth"
+
+#: Applied when the setting is unset or unreadable.
+DEFAULT_GROUP_DEPTH = 8
+
+#: Ceiling no setting can raise. The tree view assigns one accent colour per
+#: level and the layout gives each one a full column or ring, so nesting past
+#: this stops being readable however it is drawn.
+GROUP_DEPTH_HARD_LIMIT = 12
+
+
+def max_group_depth(session: Session) -> int:
+    """Configured nesting limit, clamped to 1..``GROUP_DEPTH_HARD_LIMIT``.
+
+    Falls back to the default for a missing or non-numeric setting rather than
+    raising: a malformed value should not make the grouping endpoints fail.
+    """
+    row = session.exec(
+        select(Setting).where(Setting.key == GROUP_DEPTH_SETTING_KEY)
+    ).first()
+    try:
+        value = int(row.value) if row is not None and row.value else DEFAULT_GROUP_DEPTH
+    except ValueError:
+        return DEFAULT_GROUP_DEPTH
+    return max(1, min(GROUP_DEPTH_HARD_LIMIT, value))
 
 
 def build_parent_map(session: Session) -> dict[uuid.UUID, uuid.UUID | None]:

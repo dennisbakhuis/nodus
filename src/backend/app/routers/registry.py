@@ -43,10 +43,10 @@ from app.schemas.technology import (
 )
 from app.services.dedup import find_exact_alias_match, find_fuzzy_alias_matches
 from app.services.grouping import (
-    MAX_GROUP_DEPTH,
     ancestor_ids,
     build_children_map,
     build_parent_map,
+    max_group_depth,
     subtree_height,
 )
 from app.services.movements import record_event
@@ -87,6 +87,8 @@ def _topic_to_read(topic: Topic, session: SessionDep) -> TopicRead:
         slug=topic.slug,
         not_for_external_publication=topic.not_for_external_publication,
         parent_topic_id=topic.parent_topic_id,
+        group_description=topic.group_description,
+        group_scope=topic.group_scope,
         created_at=topic.created_at,
         technology_id=tech.id if tech else None,
         registry_status=tech.registry_status if tech else None,
@@ -112,10 +114,11 @@ def _validate_parent(
 
     children_map = build_children_map(session)
     parent_depth = len(ancestor_ids(parent_map, parent_topic_id)) + 1
-    if parent_depth + subtree_height(children_map, topic_id) > MAX_GROUP_DEPTH:
+    limit = max_group_depth(session)
+    if parent_depth + subtree_height(children_map, topic_id) > limit:
         raise HTTPException(
             status_code=422,
-            detail=f"Group nesting exceeds the maximum depth of {MAX_GROUP_DEPTH}.",
+            detail=f"Group nesting exceeds the maximum depth of {limit}.",
         )
 
 
@@ -223,6 +226,8 @@ def list_topics(
             slug=topic.slug,
             not_for_external_publication=topic.not_for_external_publication,
             parent_topic_id=topic.parent_topic_id,
+            group_description=topic.group_description,
+            group_scope=topic.group_scope,
             created_at=topic.created_at,
             technology_id=tech.id if tech else None,
             registry_status=tech.registry_status if tech else None,
@@ -243,6 +248,10 @@ def get_groups_tree(session: SessionDep, user: OptionalUserDep) -> list[GroupTre
     """
     topics = session.exec(select(Topic)).all()
     topic_map = {t.id: t for t in topics}
+    # One query for the whole forest rather than a link lookup per node.
+    topics_with_people = {
+        row for row in session.exec(select(TopicPersonLink.topic_id)).all()
+    }
     on_radar_ids = {
         tech.topic_id
         for tech in session.exec(select(Technology)).all()
@@ -274,6 +283,13 @@ def get_groups_tree(session: SessionDep, user: OptionalUserDep) -> list[GroupTre
                     slug=topic.slug,
                     not_for_external_publication=topic.not_for_external_publication,
                     on_radar=topic.id in on_radar_ids,
+                    has_profile=bool(
+                        topic.group_description
+                        or topic.group_scope
+                        or topic.id in topics_with_people
+                    ),
+                    group_description=topic.group_description,
+                    group_scope=topic.group_scope,
                     children=child_nodes,
                 )
             )
@@ -545,7 +561,11 @@ def update_topic(
     session: SessionDep,
     _user: WriterDep,
 ) -> TopicRead:
-    """Update mutable fields on a Topic (canonical_name, slug, not_for_external_publication).
+    """Update mutable fields on a Topic.
+
+    Covers the name and slug, publication visibility, the parent link, and the
+    group profile (``group_description`` / ``group_scope``). An empty string
+    clears a profile field; omitting it leaves it alone.
 
     Parameters
     ----------
@@ -572,6 +592,10 @@ def update_topic(
         )
     if payload.not_for_external_publication is not None:
         topic.not_for_external_publication = payload.not_for_external_publication
+    if payload.group_description is not None:
+        topic.group_description = payload.group_description.strip() or None
+    if payload.group_scope is not None:
+        topic.group_scope = payload.group_scope.strip() or None
 
     if payload.clear_parent:
         topic.parent_topic_id = None

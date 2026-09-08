@@ -6,6 +6,7 @@ import {
   listTopics,
   updateTopic,
 } from "../api/topics";
+import { GroupProfileModal } from "./GroupProfileModal";
 import { useConfirm } from "../shared/ConfirmDialog";
 import { LoadingState } from "../shared/LoadingState";
 import { StatusBanner } from "../shared/StatusBanner";
@@ -50,6 +51,7 @@ export function GroupsPage() {
   const [newParent, setNewParent] = useState("");
   const [existingTopic, setExistingTopic] = useState("");
   const [existingParent, setExistingParent] = useState("");
+  const [profileTopicId, setProfileTopicId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,8 +75,15 @@ export function GroupsPage() {
   }, [load]);
 
   const rows = useMemo(() => flatten(tree), [tree]);
+  const profileTopic = useMemo(
+    () => topics.find((t) => t.id === profileTopicId) ?? null,
+    [topics, profileTopicId],
+  );
   const topicsByName = useMemo(
-    () => [...topics].sort((a, b) => a.canonical_name.localeCompare(b.canonical_name)),
+    () =>
+      [...topics].sort((a, b) =>
+        a.canonical_name.localeCompare(b.canonical_name),
+      ),
     [topics],
   );
 
@@ -158,10 +167,10 @@ export function GroupsPage() {
       <div className={styles.header}>
         <h1>Groups</h1>
         <p>
-          Organise technologies into a multi-level taxonomy (e.g. Generative AI ▸
-          Agentic AI). Groups are a metadata layer distinct from segments — they
-          never change a dot&apos;s radar position; selecting a group in the
-          sidebar highlights its members. A group can be a pure label or an
+          Organise technologies into a multi-level taxonomy (e.g. Generative AI
+          ▸ Agentic AI). Groups are a metadata layer distinct from segments —
+          they never change a dot&apos;s radar position; selecting a group in
+          the sidebar highlights its members. A group can be a pure label or an
           on-radar technology that also acts as a parent.
         </p>
       </div>
@@ -215,7 +224,9 @@ export function GroupsPage() {
           </button>
         </form>
 
-        <h2 className={styles.sectionTitle}>Add an existing technology to a group</h2>
+        <h2 className={styles.sectionTitle}>
+          Add an existing technology to a group
+        </h2>
         <form
           onSubmit={(e) => void handleAddExisting(e)}
           style={{
@@ -325,6 +336,19 @@ export function GroupsPage() {
                           }}
                         >
                           {node.canonical_name}
+                          {node.has_profile && (
+                            <span
+                              title="Has a group profile"
+                              aria-label="Has a group profile"
+                              style={{
+                                marginLeft: 6,
+                                fontSize: 10,
+                                color: "var(--color-muted-text)",
+                              }}
+                            >
+                              ✎
+                            </span>
+                          )}
                           {node.on_radar && (
                             <span
                               title="On radar"
@@ -347,7 +371,10 @@ export function GroupsPage() {
                         onChange={(e) => {
                           const v = e.target.value;
                           if (v === "__placeholder__") return;
-                          void reparent(node.topic_id, v === "__top__" ? "" : v);
+                          void reparent(
+                            node.topic_id,
+                            v === "__top__" ? "" : v,
+                          );
                         }}
                         style={{ width: "100%" }}
                       >
@@ -364,7 +391,15 @@ export function GroupsPage() {
                           ))}
                       </select>
                     </td>
-                    <td>
+                    <td style={{ display: "flex", gap: "var(--space-2)" }}>
+                      <button
+                        type="button"
+                        className={styles.btnSecondary}
+                        onClick={() => setProfileTopicId(node.topic_id)}
+                        title="Describe this family, and say who looks after it"
+                      >
+                        Profile
+                      </button>
                       <button
                         type="button"
                         className={styles.btnSecondary}
@@ -381,6 +416,14 @@ export function GroupsPage() {
           </table>
         )}
       </section>
+
+      {profileTopic && (
+        <GroupProfileModal
+          topic={profileTopic}
+          onClose={() => setProfileTopicId(null)}
+          onSaved={() => void load()}
+        />
+      )}
     </div>
   );
 }

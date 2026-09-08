@@ -16,8 +16,8 @@
  * nowhere; submodules are imported by name so Vite can tree-shake them.
  */
 
-import { hierarchy, tree as d3tree } from "d3-hierarchy";
-import { linkHorizontal } from "d3-shape";
+import { cluster, hierarchy, tree as d3tree } from "d3-hierarchy";
+import { linkHorizontal, linkRadial } from "d3-shape";
 import type { RadarEntry } from "../radar/types";
 import type { GroupNode, TreeNodeKind } from "./groupForest";
 import type { CanonicalEdge, EdgeKind, LineageNode } from "./dependencyGraph";
@@ -28,6 +28,12 @@ import { depthHeaderLabel, levelHeaderLabel } from "./treeEncodings";
 // keeps them from running through the text.
 export const ROW_H = 46;
 export const COLUMN_W = 230;
+
+/** Gap between concentric depth rings in the radial layout. */
+export const RING_STEP = 120;
+
+/** Room reserved outside the outermost ring for radial captions. */
+const RADIAL_LABEL_PAD = 170;
 
 export type PositionedNode = {
   topicId: string;
@@ -43,6 +49,16 @@ export type PositionedNode = {
   matched: boolean;
   /** Retained only to connect a matching descendant — render dimmed. */
   connector: boolean;
+  /** Has children the layout left out because the node is not expanded. */
+  collapsed: boolean;
+  /** Whether it parents anything, open or not. */
+  hasChildren: boolean;
+  /**
+   * Radians clockwise from twelve o'clock, set only by radial layouts. Its
+   * presence is what tells the renderer to place the caption along a radius
+   * instead of below the mark.
+   */
+  angle?: number;
 };
 
 export type PositionedLink = {
@@ -52,14 +68,30 @@ export type PositionedLink = {
   path: string;
   /** Same-level, level-skipping or cycle-closing — drawn as a dashed arc behind the rest. */
   back: boolean;
+  /** Depth of the source node, for tinting a link by the generation it leaves. */
+  sourceLevel: number;
+  /** A link into a parent carries more weight than one into a leaf. */
+  targetKind: TreeNodeKind;
 };
 
 export type ColumnHeader = { level: number; x: number; label: string };
+export type RingHeader = { level: number; radius: number; label: string };
 
 export type TreeLayout = {
+  /** Which ground the renderer draws: vertical lanes, or concentric bands. */
+  shape: "columns" | "radial";
+  /**
+   * `depth` tints a link by the generation it leaves, which is the only signal
+   * available when every edge is a `drives` parent link. `relation` keeps the
+   * radar's per-category colours, which carry real meaning in dependency mode.
+   */
+  linkPalette: "depth" | "relation";
   nodes: PositionedNode[];
   links: PositionedLink[];
+  /** Populated by columnar layouts; empty for radial. */
   columns: ColumnHeader[];
+  /** Populated by the radial layout; empty for columnar. */
+  rings: RingHeader[];
   width: number;
   height: number;
 };
@@ -67,6 +99,15 @@ export type TreeLayout = {
 const link = linkHorizontal<unknown, [number, number]>()
   .x((d) => d[0])
   .y((d) => d[1]);
+
+/** Angle is measured from twelve o'clock, matching `radialPoint` below. */
+const radialLink = linkRadial<unknown, [number, number]>()
+  .angle((d) => d[0])
+  .radius((d) => d[1]);
+
+function radialPoint(angle: number, radius: number): { x: number; y: number } {
+  return { x: radius * Math.sin(angle), y: -radius * Math.cos(angle) };
+}
 
 function pathBetween(sx: number, sy: number, tx: number, ty: number): string {
   return link({ source: [sx, sy], target: [tx, ty] }) ?? "";
@@ -90,26 +131,39 @@ type LayoutInput = {
  * Children of a collapsed node are omitted entirely rather than positioned and
  * hidden, so the layout closes up around them.
  */
-export function layoutGroupTree(
-  forest: GroupNode[],
-  expanded: Set<string>,
-  { matched, connector }: LayoutInput,
-): TreeLayout {
-  const root = hierarchy<GroupNode>(
+function forestHierarchy(forest: GroupNode[], expanded: Set<string>) {
+  return hierarchy<GroupNode>(
     {
-      topicId: "__root__",
+      topicId: SYNTHETIC_ROOT,
       name: "",
       slug: "",
+      description: null,
+      scope: null,
       kind: "labelGroup",
       entry: null,
       children: forest,
       depth: -1,
     },
     (node) =>
-      node.topicId === "__root__" || expanded.has(node.topicId)
+      node.topicId === SYNTHETIC_ROOT || expanded.has(node.topicId)
         ? node.children
         : [],
   );
+}
+
+const SYNTHETIC_ROOT = "__root__";
+
+/** A node with children the caller chose not to expand still has a subtree. */
+function isCollapsed(node: GroupNode, expanded: Set<string>): boolean {
+  return node.children.length > 0 && !expanded.has(node.topicId);
+}
+
+export function layoutGroupTree(
+  forest: GroupNode[],
+  expanded: Set<string>,
+  { matched, connector }: LayoutInput,
+): TreeLayout {
+  const root = forestHierarchy(forest, expanded);
 
   d3tree<GroupNode>().nodeSize([ROW_H, COLUMN_W])(root);
 
@@ -117,7 +171,7 @@ export function layoutGroupTree(
   const byId = new Map<string, PositionedNode>();
 
   for (const point of root.descendants()) {
-    if (point.data.topicId === "__root__") continue;
+    if (point.data.topicId === SYNTHETIC_ROOT) continue;
     // d3 lays trees out top-down; this view is left-to-right, so the axes swap.
     const positioned: PositionedNode = {
       topicId: point.data.topicId,
@@ -130,6 +184,8 @@ export function layoutGroupTree(
       y: point.x ?? 0,
       matched: matched.has(point.data.topicId),
       connector: connector.has(point.data.topicId),
+      collapsed: isCollapsed(point.data, expanded),
+      hasChildren: point.data.children.length > 0,
     };
     nodes.push(positioned);
     byId.set(positioned.topicId, positioned);
@@ -137,7 +193,7 @@ export function layoutGroupTree(
 
   const links: PositionedLink[] = [];
   for (const point of root.links()) {
-    if (point.source.data.topicId === "__root__") continue;
+    if (point.source.data.topicId === SYNTHETIC_ROOT) continue;
     const source = byId.get(point.source.data.topicId);
     const target = byId.get(point.target.data.topicId);
     if (!source || !target) continue;
@@ -147,6 +203,8 @@ export function layoutGroupTree(
       kind: "drives",
       path: pathBetween(source.x, source.y, target.x, target.y),
       back: false,
+      sourceLevel: source.level,
+      targetKind: target.kind,
     });
   }
 
@@ -156,7 +214,125 @@ export function layoutGroupTree(
   // offset every caption by one column.
   const columns = columnsFrom(nodes, depthHeaderLabel);
 
-  return { nodes, links, columns, ...extent(nodes) };
+  return {
+    shape: "columns",
+    linkPalette: "depth",
+    nodes,
+    links,
+    columns,
+    rings: [],
+    ...extent(nodes),
+  };
+}
+
+/**
+ * The same forest drawn as a radial dendrogram.
+ *
+ * Depth becomes radius and sibling order becomes angle, so a wide generation
+ * spends the circumference it needs instead of a tall column. `d3.cluster` is
+ * used rather than `d3.tree` deliberately: aligning every leaf on the outermost
+ * ring is what makes the ring captions mean anything.
+ *
+ * Angles run clockwise from twelve o'clock, which is the convention
+ * `d3.linkRadial` already assumes, so the link generator needs no adapting.
+ */
+export function layoutRadialGroups(
+  forest: GroupNode[],
+  expanded: Set<string>,
+  { matched, connector }: LayoutInput,
+): TreeLayout {
+  const root = forestHierarchy(forest, expanded);
+
+  cluster<GroupNode>()
+    .size([2 * Math.PI, 1])
+    // Two roots' subtrees need a visible gap between them; siblings do not.
+    .separation((a, b) => (a.parent === b.parent ? 1 : 2))(root);
+
+  const nodes: PositionedNode[] = [];
+  const byId = new Map<string, PositionedNode>();
+  const angleById = new Map<string, number>();
+  const radiusById = new Map<string, number>();
+  const radiusByLevel = new Map<number, number>();
+
+  for (const point of root.descendants()) {
+    if (point.data.topicId === SYNTHETIC_ROOT) continue;
+    const angle = point.x ?? 0;
+    // The synthetic root occupies depth 0, so a real root sits one ring out.
+    const radius = point.depth * RING_STEP;
+    const { x, y } = radialPoint(angle, radius);
+    const positioned: PositionedNode = {
+      topicId: point.data.topicId,
+      name: point.data.name,
+      slug: point.data.slug,
+      kind: point.data.kind,
+      entry: point.data.entry,
+      level: point.data.depth,
+      x,
+      y,
+      matched: matched.has(point.data.topicId),
+      connector: connector.has(point.data.topicId),
+      collapsed: isCollapsed(point.data, expanded),
+      hasChildren: point.data.children.length > 0,
+      angle,
+    };
+    nodes.push(positioned);
+    byId.set(positioned.topicId, positioned);
+    angleById.set(positioned.topicId, angle);
+    radiusById.set(positioned.topicId, radius);
+    // Rings are derived from where nodes actually landed rather than from the
+    // group depth: the forest hangs off a synthetic root, so d3 puts depth 0
+    // one ring out and a ring computed from the depth alone misses every mark.
+    radiusByLevel.set(positioned.level, radius);
+  }
+
+  const links: PositionedLink[] = [];
+  for (const edge of root.links()) {
+    if (edge.source.data.topicId === SYNTHETIC_ROOT) continue;
+    const source = byId.get(edge.source.data.topicId);
+    const target = byId.get(edge.target.data.topicId);
+    if (!source || !target) continue;
+    links.push({
+      from: source.topicId,
+      to: target.topicId,
+      kind: "drives",
+      path:
+        radialLink({
+          source: [
+            angleById.get(source.topicId) ?? 0,
+            radiusById.get(source.topicId) ?? 0,
+          ],
+          target: [
+            angleById.get(target.topicId) ?? 0,
+            radiusById.get(target.topicId) ?? 0,
+          ],
+        }) ?? "",
+      back: false,
+      sourceLevel: source.level,
+      targetKind: target.kind,
+    });
+  }
+
+  const rings = [...radiusByLevel.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([level, radius]) => ({
+      level,
+      radius,
+      label: depthHeaderLabel(level),
+    }));
+
+  const outer = rings.length ? rings[rings.length - 1]!.radius : 0;
+  const span = (outer + RADIAL_LABEL_PAD) * 2;
+
+  return {
+    shape: "radial",
+    linkPalette: "depth",
+    nodes,
+    links,
+    columns: [],
+    rings,
+    width: span,
+    height: span,
+  };
 }
 
 /**
@@ -229,6 +405,8 @@ export function layoutLineage(
         y: yById.get(id) ?? 0,
         matched: matched.has(id),
         connector: connector.has(id),
+        collapsed: false,
+        hasChildren: false,
       });
     }
   }
@@ -250,12 +428,22 @@ export function layoutLineage(
       kind: edge.kind,
       path: pathBetween(source.x, source.y, target.x, target.y),
       back,
+      sourceLevel: source.level,
+      targetKind: target.kind,
     });
   }
 
   const columns = columnsFrom(nodes, levelHeaderLabel, (a, b) => b - a);
 
-  return { nodes, links, columns, ...extent(nodes) };
+  return {
+    shape: "columns",
+    linkPalette: "relation",
+    nodes,
+    links,
+    columns,
+    rings: [],
+    ...extent(nodes),
+  };
 }
 
 /**

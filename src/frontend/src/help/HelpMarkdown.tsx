@@ -1,6 +1,10 @@
 import type { CSSProperties, ReactNode } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, {
+  type Components,
+  defaultUrlTransform,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { GuideFigure, isFigureSrc } from "./GuideFigure";
 
 type Props = {
   source: string;
@@ -161,9 +165,15 @@ const baseComponents: Components = {
   blockquote: ({ children }) => (
     <blockquote style={styles.blockquote}>{children}</blockquote>
   ),
-  img: ({ src, alt }) => (
-    <img src={src} alt={alt ?? ""} loading="lazy" style={styles.img} />
-  ),
+  // `![Caption](figure:name)` renders a drawn diagram instead of fetching an
+  // image, so the content files stay plain markdown and the figures stay
+  // vector, themed, and in the bundle.
+  img: ({ src, alt }) =>
+    isFigureSrc(src) ? (
+      <GuideFigure src={src} />
+    ) : (
+      <img src={src} alt={alt ?? ""} loading="lazy" style={styles.img} />
+    ),
   table: ({ children }) => <table style={styles.table}>{children}</table>,
   th: ({ children }) => <th style={styles.th}>{children}</th>,
   td: ({ children }) => <td style={styles.td}>{children}</td>,
@@ -189,6 +199,11 @@ export function HelpMarkdown({ source, withAnchors = false }: Props) {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={withAnchors ? anchorComponents : baseComponents}
+      // The default transform drops any URL with an unknown protocol, which
+      // would swallow `figure:` before the `img` renderer ever sees it.
+      urlTransform={(url) =>
+        isFigureSrc(url) ? url : defaultUrlTransform(url)
+      }
     >
       {source}
     </ReactMarkdown>

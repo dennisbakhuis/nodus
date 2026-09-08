@@ -15,6 +15,13 @@ export type ExportTarget =
       data: RadarData;
     }
   | {
+      /** The technology tree canvas — same SVG/PNG/PDF menu, different prep. */
+      mode: "tree";
+      svgRef: React.RefObject<SVGSVGElement | null>;
+      data: RadarData;
+      fileBase: string;
+    }
+  | {
       mode: "data";
       data: RadarData;
       filters: FilterState;
@@ -39,7 +46,8 @@ const Ctx = createContext<ExportContextValue>({
  * exportable, and the chrome (Layout header) render an Export button only when
  * something is in fact exportable. The Radar page publishes ``mode: "radar"``
  * (SVG/PNG/PDF visualization export); the List page publishes
- * ``mode: "data"`` (CSV/Excel/JSON of the filtered entries). */
+ * ``mode: "data"`` (CSV/Excel/JSON of the filtered entries); the Tree page
+ * publishes ``mode: "tree"``. */
 export function ExportProvider({ children }: { children: ReactNode }) {
   const [target, setTarget] = useState<ExportTarget | null>(null);
   const stableSet = useCallback((t: ExportTarget | null) => setTarget(t), []);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { RadarEntry, RadarData, TechnologyRelation } from "./types";
 import { getTopic } from "../api/client";
 import { listMovements } from "../manage/api";
@@ -27,6 +27,13 @@ type Props = {
   syncUrl?: boolean;
   /** Route prefix used when `syncUrl` is on. */
   basePath?: string;
+  /**
+   * Extra content above the factsheet.
+   *
+   * The tree uses it for a group profile: a technology that also heads a
+   * family has two things to say, and the factsheet only says one of them.
+   */
+  extraSection?: ReactNode;
 };
 
 type MovementEvent = {
@@ -55,6 +62,7 @@ export function DetailPanel({
   disabled = false,
   syncUrl = true,
   basePath = "/radar",
+  extraSection,
 }: Props) {
   const { canOpenFullTopicModal: canExpand } = useAuth();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -431,6 +439,18 @@ export function DetailPanel({
             >
               Loading…
             </p>
+          )}
+
+          {extraSection && (
+            <div
+              style={{
+                marginBottom: "var(--space-5)",
+                paddingBottom: "var(--space-4)",
+                borderBottom: "1px solid var(--color-border)",
+              }}
+            >
+              {extraSection}
+            </div>
           )}
 
           {detail && entry && (

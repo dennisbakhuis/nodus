@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildGroupForest,
   classifyNode,
+  focusForest,
   pruneForest,
   walkForest,
 } from "../../src/tree/groupForest";
@@ -155,5 +156,53 @@ describe("pruneForest", () => {
     const { nodes, connectorOnly } = pruneForest(forest, () => true);
     expect(walkForest(nodes)).toHaveLength(3);
     expect(connectorOnly.size).toBe(0);
+  });
+});
+
+describe("focusForest", () => {
+  // umbrella (a label group, no entry) ▸ gen ▸ agents, plus a second root.
+  const forest = buildGroupForest(
+    [
+      node("umbrella", [node("gen", [node("agents")])], { on_radar: false }),
+      node("platforms", [node("cloud")]),
+    ],
+    [entry("gen"), entry("agents"), entry("platforms"), entry("cloud")],
+  );
+
+  it("narrows to the node and its descendants", () => {
+    const focused = focusForest(forest, "gen", "subtree");
+    expect(focused.map((n) => n.topicId)).toEqual(["gen"]);
+    expect(walkForest(focused).map((n) => n.topicId)).toEqual([
+      "gen",
+      "agents",
+    ]);
+  });
+
+  it("keeps the row a node sits in for siblings", () => {
+    const focused = focusForest(forest, "gen", "siblings");
+    expect(focused.map((n) => n.topicId)).toEqual(["gen"]);
+  });
+
+  it("returns the whole forest for a root's siblings", () => {
+    // Documented rather than desirable: a root's siblings are the other roots,
+    // so this scope is a no-op on a top-level umbrella. `TreePage` resets the
+    // scope when a new node is picked so the combination is not reached by
+    // accident — a focus that changes nothing reads as a broken control.
+    expect(focusForest(forest, "umbrella", "siblings")).toEqual(forest);
+  });
+
+  it("keeps the path from the root for lineage", () => {
+    const focused = focusForest(forest, "agents", "lineage");
+    expect(walkForest(focused).map((n) => n.topicId)).toEqual([
+      "umbrella",
+      "gen",
+      "agents",
+    ]);
+  });
+
+  it("focuses a label group the same as any other node", () => {
+    const focused = focusForest(forest, "umbrella", "subtree");
+    expect(focused.map((n) => n.topicId)).toEqual(["umbrella"]);
+    expect(walkForest(focused)).toHaveLength(3);
   });
 });
