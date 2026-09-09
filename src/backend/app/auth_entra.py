@@ -115,6 +115,29 @@ def role_from_group_ids(group_ids: Iterable[str]) -> UserRole:
     return UserRole.PublicReader
 
 
+def role_from_app_roles(roles: Any) -> UserRole | None:
+    """Pick the highest-privilege role from the Entra ``roles`` (app role) claim.
+
+    Entra emits the appRole ``value`` strings, which this app defines to match
+    :class:`UserRole` values exactly. Matching is case-insensitive and anything
+    unrecognised is ignored, so an arbitrary claim string can never become a
+    role. Unlike ``groups``, app roles are never suppressed by an overage cap.
+
+    Returns ``None`` when the claim is absent or carries no recognised value, so
+    callers can fall back to :func:`role_from_group_ids`.
+    """
+    if isinstance(roles, str):
+        values = {roles.strip().lower()}
+    elif isinstance(roles, Iterable):
+        values = {entry.strip().lower() for entry in roles if isinstance(entry, str)}
+    else:
+        return None
+    for role in (UserRole.Admin, UserRole.Writer, UserRole.Reader, UserRole.PublicReader):
+        if role.value in values:
+            return role
+    return None
+
+
 # --- PKCE & state helpers ------------------------------------------------
 
 

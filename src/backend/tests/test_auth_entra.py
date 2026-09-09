@@ -20,6 +20,7 @@ from collections.abc import Generator
 from typing import Any
 from unittest.mock import patch
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -33,6 +34,7 @@ from app.auth_entra import (
     EntraValidationError,
     extract_group_ids_from_claims,
     pack_oidc_state,
+    role_from_app_roles,
     role_from_group_ids,
     validate_id_token,
 )
@@ -83,6 +85,7 @@ def _mint_id_token(
     nonce: str,
     oid: str = "11111111-1111-1111-1111-111111111111",
     groups: list[str] | None = None,
+    roles: list[str] | None = None,
     overage: bool = False,
     given_name: str = "Eve",
     family_name: str = "Engineer",
@@ -107,6 +110,8 @@ def _mint_id_token(
         payload["_claim_names"] = {"groups": "src1"}
     elif groups is not None:
         payload["groups"] = groups
+    if roles is not None:
+        payload["roles"] = roles
     return jwt.encode({"alg": "RS256", "kid": rsa_key.kid}, payload, rsa_key)
 
 
@@ -231,6 +236,33 @@ def test_role_from_group_ids_no_match_defaults_to_public_reader(
     monkeypatch.setenv("NODUS_AUTH_ENTRA_GROUP_ADMIN", "GADM")
     assert role_from_group_ids(["unrelated-group-id"]) == UserRole.PublicReader
     assert role_from_group_ids([]) == UserRole.PublicReader
+
+
+def test_role_from_app_roles_picks_highest_privilege() -> None:
+    """App roles need no env config — the claim carries the role values itself."""
+    assert role_from_app_roles(["admin"]) == UserRole.Admin
+    assert role_from_app_roles(["reader", "admin"]) == UserRole.Admin
+    assert role_from_app_roles(["writer"]) == UserRole.Writer
+    assert role_from_app_roles(["reader"]) == UserRole.Reader
+    assert role_from_app_roles(["public_reader"]) == UserRole.PublicReader
+
+
+def test_role_from_app_roles_is_case_insensitive() -> None:
+    assert role_from_app_roles(["Admin"]) == UserRole.Admin
+    assert role_from_app_roles([" WRITER "]) == UserRole.Writer
+
+
+def test_role_from_app_roles_accepts_a_bare_string() -> None:
+    """Entra sends a list, but a single-value claim must not break the mapping."""
+    assert role_from_app_roles("admin") == UserRole.Admin
+
+
+def test_role_from_app_roles_returns_none_when_unmapped() -> None:
+    """None (not PublicReader) so the caller falls back to group ids."""
+    assert role_from_app_roles(["nonsense"]) is None
+    assert role_from_app_roles([]) is None
+    assert role_from_app_roles(None) is None
+    assert role_from_app_roles(["Topic.Read.All", 42]) is None
 
 
 def test_extract_group_ids_present() -> None:
@@ -369,6 +401,36 @@ def _set_state_cookie(client: TestClient, state: str, nonce: str, verifier: str)
     client.cookies.set("nodus_oidc_state", pack_oidc_state(state, nonce, verifier))
 
 
+def _run_callback(
+    anon_client: TestClient,
+    rsa_key: RSAKey,
+    entra_settings: EntraSettings,
+    **token_kwargs: Any,
+) -> httpx.Response:
+    """Drive the callback end-to-end with a freshly minted ID token."""
+    state, nonce, verifier = "S", "N", "V"
+    id_token = _mint_id_token(
+        rsa_key,
+        issuer=entra_settings.issuer,
+        audience=entra_settings.client_id,
+        nonce=nonce,
+        **token_kwargs,
+    )
+    _set_state_cookie(anon_client, state, nonce, verifier)
+    with (
+        patch("app.routers.auth_entra.fetch_oidc_metadata", return_value=_full_metadata()),
+        patch("app.routers.auth_entra.fetch_jwks", return_value=_public_keyset(rsa_key)),
+        patch(
+            "app.routers.auth_entra.auth_entra.exchange_code_for_id_token",
+            return_value=id_token,
+        ),
+    ):
+        return anon_client.get(
+            f"/api/auth/entra/callback?code=AUTHCODE&state={state}",
+            follow_redirects=False,
+        )
+
+
 def test_entra_callback_jit_provisions_writer_from_group(
     anon_client: TestClient,
     entra_env: None,
@@ -412,6 +474,123 @@ def test_entra_callback_jit_provisions_writer_from_group(
     assert created.username == "eve@contoso.com"
     assert created.first_name == "Eve"
     assert created.password_hash == ""
+
+
+def test_entra_callback_app_role_survives_group_overage(
+    anon_client: TestClient,
+    entra_env: None,
+    session: Session,
+    rsa_key: RSAKey,
+    entra_settings: EntraSettings,
+) -> None:
+    """The regression that matters: overage suppresses groups, app roles carry the role.
+
+    This is the exact token shape the TenneT tenant emits — no ``groups`` claim,
+    a ``_claim_names`` pointer, and a populated ``roles`` claim. Before app-role
+    support this user landed on public_reader.
+    """
+    response = _run_callback(
+        anon_client,
+        rsa_key,
+        entra_settings,
+        oid="oid-eve",
+        overage=True,
+        roles=["admin"],
+    )
+
+    assert response.status_code == 302, response.text
+    created = session.exec(select(User).where(User.entra_oid == "oid-eve")).one()
+    assert created.role == UserRole.Admin.value
+
+
+def test_entra_callback_app_role_beats_group_claim(
+    anon_client: TestClient,
+    entra_env: None,
+    session: Session,
+    rsa_key: RSAKey,
+    entra_settings: EntraSettings,
+) -> None:
+    """App roles are consulted first, so they win over a contradicting groups claim."""
+    response = _run_callback(
+        anon_client,
+        rsa_key,
+        entra_settings,
+        oid="oid-eve",
+        groups=["GWRT"],
+        roles=["admin"],
+    )
+
+    assert response.status_code == 302, response.text
+    created = session.exec(select(User).where(User.entra_oid == "oid-eve")).one()
+    assert created.role == UserRole.Admin.value
+
+
+def test_entra_callback_falls_back_to_groups_without_app_roles(
+    anon_client: TestClient,
+    entra_env: None,
+    session: Session,
+    rsa_key: RSAKey,
+    entra_settings: EntraSettings,
+) -> None:
+    """Backward compat: deployments mapping by group id keep working untouched."""
+    response = _run_callback(
+        anon_client,
+        rsa_key,
+        entra_settings,
+        oid="oid-eve",
+        groups=["GADM"],
+    )
+
+    assert response.status_code == 302, response.text
+    created = session.exec(select(User).where(User.entra_oid == "oid-eve")).one()
+    assert created.role == UserRole.Admin.value
+
+
+def test_entra_callback_overage_without_app_roles_warns(
+    anon_client: TestClient,
+    entra_env: None,
+    session: Session,
+    rsa_key: RSAKey,
+    entra_settings: EntraSettings,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Overage and no app roles still means public_reader — but no longer silently."""
+    with caplog.at_level("WARNING", logger="app.auth_entra"):
+        response = _run_callback(
+            anon_client,
+            rsa_key,
+            entra_settings,
+            oid="oid-eve",
+            overage=True,
+        )
+
+    assert response.status_code == 302, response.text
+    created = session.exec(select(User).where(User.entra_oid == "oid-eve")).one()
+    assert created.role == UserRole.PublicReader.value
+    assert "no app roles" in caplog.text
+    assert "overage=True" in caplog.text
+
+
+def test_entra_callback_unrecognised_app_role_falls_back_to_groups(
+    anon_client: TestClient,
+    entra_env: None,
+    session: Session,
+    rsa_key: RSAKey,
+    entra_settings: EntraSettings,
+) -> None:
+    """An unknown claim value must never map to a role — the groups path still runs."""
+    response = _run_callback(
+        anon_client,
+        rsa_key,
+        entra_settings,
+        oid="oid-eve",
+        groups=["GWRT"],
+        roles=["Topic.Read.All"],
+    )
+
+    assert response.status_code == 302, response.text
+    created = session.exec(select(User).where(User.entra_oid == "oid-eve")).one()
+    assert created.role == UserRole.Writer.value
 
 
 def test_entra_callback_resyncs_role_on_relogin(

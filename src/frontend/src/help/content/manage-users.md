@@ -36,5 +36,5 @@ password reset.
 ## Single sign-on (Entra)
 
 When Entra is enabled, those users are created and role-synced automatically from
-their group membership and are read-only here; the role → group mapping is shown
-for reference.
+their app-role assignment — falling back to group membership — and are read-only
+here; both mappings are shown for reference.

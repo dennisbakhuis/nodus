@@ -56,6 +56,7 @@ export type EntraGroupMapping = {
 
 export type EntraAdminConfig = {
   enabled: boolean;
+  app_role_values: string[];
   groups: EntraGroupMapping[];
 };
 
@@ -128,7 +129,7 @@ export async function getPersonCandidates(
   );
 }
 
-/** Admin: the Entra integration's enabled state and group→role mapping. */
+/** Admin: the Entra integration's enabled state, app-role values and group→role mapping. */
 export async function getEntraConfig(): Promise<EntraAdminConfig> {
   return request<EntraAdminConfig>("/auth/entra/admin/config");
 }
