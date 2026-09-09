@@ -157,16 +157,24 @@ passed, so re-running it is safe.
 
 ## Schema changes
 
-The schema is rebuilt from `SQLModel.metadata` — there are no migration
-files. To pick up a model change in development:
+The schema is created from `SQLModel.metadata` — there are no migration
+files yet, and `create_all()` only ever adds missing *tables*. On SQLite a
+small startup step also adds missing columns; on PostgreSQL/MySQL nothing
+does. See the schema-evolution section in
+[`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) before changing a model.
+
+To pick up a model change in development:
 
 ```bash
 make db-reset   # drops and recreates from current models
 make seed-dummy # repopulate with the bundled demo dataset
 ```
 
-For non-dev environments, take a backup with `/admin/backup`, apply
-schema changes via your own tooling, then restore the backup.
+For non-dev environments there is no migration runner yet: take a backup
+with `/admin/backup`, apply the DDL with your own tooling, and verify before
+swapping traffic. Adopting Alembic is the planned fix — the plan and the
+stamp-versus-upgrade caveat for existing databases are in
+[`../../ARCHITECTURE.md`](../../ARCHITECTURE.md).
 
 ## Install
 
