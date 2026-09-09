@@ -83,7 +83,11 @@ describe("UsersPage", () => {
     vi.clearAllMocks();
     mockAuth = { authEnabled: true, providers: ["local"] };
     getSetting.mockResolvedValue({ key: "x", value: "false" });
-    getEntraConfig.mockResolvedValue({ enabled: true, groups: [] });
+    getEntraConfig.mockResolvedValue({
+      enabled: true,
+      app_role_values: ["admin", "writer", "reader", "public_reader"],
+      groups: [],
+    });
     listUsers.mockResolvedValue([localUser()]);
     createUser.mockResolvedValue(localUser());
     updateUser.mockResolvedValue(localUser());
@@ -194,23 +198,37 @@ describe("UsersPage", () => {
     expect(within(row).getByText("Reader")).toBeInTheDocument();
   });
 
-  it("shows the Entra group mapping only when Entra is enabled", async () => {
+  it("shows the Entra role mapping only when Entra is enabled", async () => {
     mockAuth = { authEnabled: true, providers: ["local", "entra"] };
     getEntraConfig.mockResolvedValue({
       enabled: true,
+      app_role_values: ["admin", "writer"],
       groups: [{ role: "admin", group_id: "grp-admin" }],
     });
     renderPage();
 
-    expect(await screen.findByText("Entra group mapping")).toBeInTheDocument();
+    expect(await screen.findByText("Entra role mapping")).toBeInTheDocument();
     expect(await screen.findByText("grp-admin")).toBeInTheDocument();
   });
 
-  it("hides the Entra group mapping for local-only deployments", async () => {
+  it("lists the recognised app-role claim values", async () => {
+    mockAuth = { authEnabled: true, providers: ["local", "entra"] };
+    getEntraConfig.mockResolvedValue({
+      enabled: true,
+      app_role_values: ["admin", "writer"],
+      groups: [],
+    });
+    renderPage();
+
+    expect(await screen.findByText("App role claim value")).toBeInTheDocument();
+    expect(await screen.findByText("writer")).toBeInTheDocument();
+  });
+
+  it("hides the Entra role mapping for local-only deployments", async () => {
     mockAuth = { authEnabled: true, providers: ["local"] };
     renderPage();
     await screen.findByText("alice");
-    expect(screen.queryByText("Entra group mapping")).toBeNull();
+    expect(screen.queryByText("Entra role mapping")).toBeNull();
     expect(getEntraConfig).not.toHaveBeenCalled();
   });
 

@@ -201,6 +201,7 @@ def test_entra_admin_config_returns_group_map(
     assert response.status_code == 200
     body = response.json()
     assert body["enabled"] is True
+    assert body["app_role_values"] == ["admin", "writer", "reader", "public_reader"]
     mapping = {g["role"]: g["group_id"] for g in body["groups"]}
     assert mapping == {"admin": "group-admin", "writer": "group-writer"}
 

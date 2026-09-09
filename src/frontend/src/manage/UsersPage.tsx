@@ -598,12 +598,43 @@ export function UsersPage() {
 
       {entraEnabled && (
         <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Entra group mapping</h2>
+          <h2 className={styles.sectionTitle}>Entra role mapping</h2>
           <p className={styles.sectionDesc}>
             Users signing in through Microsoft Entra are provisioned
-            automatically and their role is synced from group membership on every
-            login, so their profile is read-only here. The mapping below is
-            configured via environment variables on the server.
+            automatically and their role is re-synced on every login, so their
+            profile is read-only here. The role comes from the token's app-role
+            claim first; the group mapping below is used only when that claim is
+            absent.
+          </p>
+          <p className={styles.sectionDesc}>
+            <strong>App roles (primary).</strong> Assigned in Entra on the app
+            registration, so they need no server configuration and are never
+            suppressed for users in many groups. These claim values are
+            recognised:
+          </p>
+          {entraConfig && entraConfig.app_role_values.length > 0 && (
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>App role claim value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entraConfig.app_role_values.map((value) => (
+                  <tr key={value}>
+                    <td>{ROLE_LABEL[value] ?? value}</td>
+                    <td>
+                      <code>{value}</code>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className={styles.sectionDesc}>
+            <strong>Group object IDs (fallback).</strong> Configured via
+            environment variables on the server.
           </p>
           {entraConfig && entraConfig.groups.length > 0 ? (
             <table className={styles.table}>

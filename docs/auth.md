@@ -56,8 +56,9 @@ Use it for:
 ### 3. Entra ID (Azure AD) SSO + emergency local — production target
 
 Humans authenticate via Entra (OIDC authorization-code + PKCE). The backend
-maps Entra group membership → application role using operator-configured
-group object IDs. A small set of local accounts remains for break-glass
+maps Entra app-role assignments → application role, falling back to
+operator-configured group object IDs. A small set of local accounts
+remains for break-glass
 admin access and service automation; API keys still work the same way.
 
 Toggled by setting `NODUS_AUTH_ENTRA_ENABLED=1` plus the other
@@ -76,7 +77,7 @@ walkthrough in **§ Enabling Entra SSO** below).
 | `NODUS_AUTH_ENTRA_CLIENT_ID`          | —        | —     | required | App registration's application (client) GUID. |
 | `NODUS_AUTH_ENTRA_CLIENT_SECRET`      | —        | —     | required | A client secret from the app registration. |
 | `NODUS_AUTH_ENTRA_REDIRECT_URI`       | —        | —     | required | Must match the redirect URI registered in Entra. |
-| `NODUS_AUTH_ENTRA_GROUP_{ROLE}`       | —        | —     | optional | One per role; unmatched users default to PublicReader. |
+| `NODUS_AUTH_ENTRA_GROUP_{ROLE}`       | —        | —     | optional | Fallback only, used when the token carries no app role. One per role; unmatched users default to PublicReader. |
 
 ## Permission enforcement
 
@@ -188,9 +189,30 @@ uses whatever you put in `NODUS_AUTH_ENTRA_REDIRECT_URI`.
 > therefore have to share an origin (or sit behind the same reverse
 > proxy) for this to work without extra config.
 
-### Step 4 — Configure ID-token group claims
+### Step 4 — Define app roles (recommended)
 
-App registration → **Token configuration** → **Add groups claim**.
+App registration → **App roles** → **Create app role**. Create one per
+application role you want to grant, with the **Value** set to the exact
+lowercase role name:
+
+| Display name | Value      | Allowed member types |
+|--------------|------------|----------------------|
+| Admin        | `admin`    | Users/Groups         |
+| Writer       | `writer`   | Users/Groups         |
+| Reader       | `reader`   | Users/Groups         |
+
+Then, in **Enterprise applications** → your app → **Users and groups**,
+assign each security group to its matching app role.
+
+Entra emits the assigned values in the ID token's `roles` claim, and the
+backend maps them straight onto application roles. **This is the
+recommended path**: unlike `groups`, the `roles` claim has no overage cap,
+so it keeps working for users who belong to hundreds of groups.
+
+#### Alternative — ID-token group claims
+
+Only needed if you would rather map by group object ID. App registration
+→ **Token configuration** → **Add groups claim**.
 
 | Setting                          | Value |
 |----------------------------------|-------|
@@ -199,13 +221,14 @@ App registration → **Token configuration** → **Add groups claim**.
 | Access token / SAML              | not required |
 
 This makes Entra emit a `groups` claim in the ID token containing the
-user's transitive security-group object IDs. Without this step the
-backend cannot determine a role and every Entra user lands as
-`PublicReader`.
+user's transitive security-group object IDs.
 
-> **Overage warning.** If a user is in more than 150 security groups,
-> Entra suppresses the claim and emits an overage marker instead. See
-> the section below on group overage for the workaround.
+> **Overage warning.** Entra caps the `groups` claim at roughly 200
+> entries per token. Above that it omits `groups` entirely and emits a
+> `_claim_names` overage pointer instead, which the backend cannot
+> resolve — every affected user then lands as `PublicReader`. In large
+> tenants accounts routinely exceed the cap, so **use app roles** rather
+> than relying on this. See the section below on group overage.
 
 ### Step 5 — Create one security group per role
 
@@ -224,6 +247,10 @@ that's what the backend matches against, not the display name.
 `NODUS_AUTH_ENTRA_GROUP_PUBLIC_READER` is optional — users who are in
 none of the configured groups default to `PublicReader` automatically.
 
+These variables are only the **fallback**. When the app roles from step 4
+are assigned, the backend resolves the role from the `roles` claim and
+never consults them.
+
 ### Step 6 — Grant API permissions
 
 App registration → **API permissions** → **Add a permission** →
@@ -238,11 +265,10 @@ The default consent flow handles the first three; `User.Read` is added
 explicitly by the OIDC start endpoint. No admin consent is required for
 delegated `User.Read` in most tenants.
 
-If you plan to support users with >150 groups (overage), additionally
-grant **`Group.Read.All`** as a Delegated permission with admin
-consent — the backend will then fall back to
-`/me/transitiveMemberOf` on Graph instead of relying on the
-ID-token `groups` claim.
+No further permissions are needed. In particular `Group.Read.All` is
+**not** required: the backend never calls Microsoft Graph to resolve group
+membership, and app roles (step 4) make the overage problem it would work
+around go away entirely.
 
 ### Step 7 — Set the backend env vars
 
@@ -256,6 +282,7 @@ NODUS_AUTH_ENTRA_CLIENT_ID=<application client id from step 1>
 NODUS_AUTH_ENTRA_CLIENT_SECRET=<client secret value from step 2>
 NODUS_AUTH_ENTRA_REDIRECT_URI=https://radar.example.com/api/auth/entra/callback
 
+# Fallback only — omit these entirely when using app roles (step 4).
 NODUS_AUTH_ENTRA_GROUP_ADMIN=<object id of radar-admins>
 NODUS_AUTH_ENTRA_GROUP_WRITER=<object id of radar-writers>
 NODUS_AUTH_ENTRA_GROUP_READER=<object id of radar-readers>
@@ -318,31 +345,52 @@ popover, not removed. Local logins continue to hit `/api/auth/login`.
 | Redirect to Microsoft fails with `AADSTS50011`       | The redirect URI sent by the backend does not match any registered URI. Check `NODUS_AUTH_ENTRA_REDIRECT_URI` matches exactly (scheme, host, path, no trailing slash). |
 | Callback returns `400 OIDC state cookie missing or expired` | The user took longer than 5 minutes between clicking the button and finishing the Microsoft prompt, or the SPA and backend are on different origins so the cookie was dropped. |
 | Callback returns `401 Entra ID token validation failed` | The deployment's `NODUS_AUTH_ENTRA_CLIENT_ID` does not match the `aud` claim in tokens minted by this tenant, or the JWKS endpoint is unreachable. |
-| Every Entra user lands as `PublicReader`             | Group claims are not configured (Step 4), the user is in no configured group, or every user is hitting the >150-group overage and `Group.Read.All` is not granted. |
+| Every Entra user lands as `PublicReader`             | No app roles are assigned and the group mapping is not resolving. Check the backend log for the `no app roles and no usable groups claim` WARNING — `overage=True` there means the `groups` claim was suppressed and app roles (Step 4) are the fix. |
 | `503 Entra SSO is not fully configured`              | One of the required `NODUS_AUTH_ENTRA_*` env vars is unset or empty. The error body lists which ones. |
 
-## Entra group → role mapping
+## Entra → role mapping
 
-When Entra is enabled, the backend reads four env vars at login time and
-picks the highest-privilege role whose configured Entra group object ID
-appears in the user's transitive group membership:
+When Entra is enabled, the backend resolves the role from the ID token in
+this order, stopping at the first step that yields one:
 
-```
-NODUS_AUTH_ENTRA_GROUP_ADMIN=<object-id>
-NODUS_AUTH_ENTRA_GROUP_WRITER=<object-id>
-NODUS_AUTH_ENTRA_GROUP_READER=<object-id>
-NODUS_AUTH_ENTRA_GROUP_PUBLIC_READER=<object-id>
-```
+1. **App roles.** The `roles` claim is matched against the application
+   role names (`admin`, `writer`, `reader`, `public_reader`),
+   case-insensitively. Unrecognised values are ignored, so an arbitrary
+   claim string can never become a role. When the claim carries several
+   values the highest privilege wins: Admin > Writer > Reader >
+   PublicReader.
+2. **Group object IDs.** Only when step 1 yields nothing. The backend
+   reads four env vars and picks the highest-privilege role whose
+   configured group object ID appears in the user's `groups` claim:
 
-A user in no configured group defaults to `PublicReader`. On every Entra
-login the role is re-derived and the local `user.role` row is updated, so
-demotions/promotions in Entra propagate within one round-trip without
-manual intervention. Local-only accounts (those with `user.entra_oid IS NULL`)
-are never touched by group-sync.
+   ```
+   NODUS_AUTH_ENTRA_GROUP_ADMIN=<object-id>
+   NODUS_AUTH_ENTRA_GROUP_WRITER=<object-id>
+   NODUS_AUTH_ENTRA_GROUP_READER=<object-id>
+   NODUS_AUTH_ENTRA_GROUP_PUBLIC_READER=<object-id>
+   ```
 
-If your Entra users belong to more than 150 groups, the `groups` claim is
-suppressed by Entra in favor of an overage marker. The current
-implementation treats overage users as `PublicReader`; the documented fix
-is to configure smaller security groups or grant the app `Group.Read.All`
-on Microsoft Graph so the backend can fall back to
-`/me/transitiveMemberOf`.
+3. **`PublicReader`**, when neither applies. A user with no app role and
+   no matching group lands here, as does a user whose `groups` claim is in
+   overage. The second case is logged as a WARNING on the `app.auth_entra`
+   logger naming the overage explicitly, because it is otherwise
+   indistinguishable from a correctly-configured user with no membership.
+
+On every Entra login the role is re-derived and the local `user.role` row
+is updated, so demotions/promotions in Entra propagate within one
+round-trip without manual intervention. Local-only accounts (those with
+`user.entra_oid IS NULL`) are never touched by this sync.
+
+### Group overage
+
+Entra caps the `groups` claim at roughly 200 entries per token. Beyond
+that it drops the claim and substitutes a `_claim_names` pointer to the
+Graph endpoint that would enumerate the rest. The backend does not call
+Graph — doing so would need `GroupMember.Read.All` with tenant admin
+consent plus a network round-trip on every single login — so users in
+overage cannot be mapped by group at all.
+
+**The fix is app roles** (step 4 above). The `roles` claim has no overage
+cap, so it resolves correctly no matter how many groups an account belongs
+to. Assign the same security groups to the app roles and the group env
+vars become unnecessary.

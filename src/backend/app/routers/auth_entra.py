@@ -34,6 +34,7 @@ from app.auth_entra import (
     extract_group_ids_from_claims,
     fetch_jwks,
     fetch_oidc_metadata,
+    role_from_app_roles,
     role_from_group_ids,
 )
 from app.db import SessionDep
@@ -62,14 +63,17 @@ _ROLE_ORDER = ("admin", "writer", "reader", "public_reader")
 
 @router.get("/admin/config")
 def entra_admin_config(_admin: AdminDep) -> dict[str, object]:
-    """Admin view of the Entra integration: whether it's enabled and the
-    configured group-object-id → application-role mapping.
+    """Admin view of the Entra integration: whether it's enabled, the app-role
+    claim values recognised at login, and the configured group-object-id →
+    application-role mapping used as the fallback.
 
-    Backs the read-only Entra panel on the Users management page. Only roles
-    with a configured group id are returned.
+    Backs the read-only Entra panel on the Users management page. App roles need
+    no server config — they are assigned in Entra — so only their recognised
+    values are reported. Only roles with a configured group id are returned.
     """
     return {
         "enabled": config.auth_entra_enabled(),
+        "app_role_values": list(_ROLE_ORDER),
         "groups": [
             {"role": role, "group_id": group_id}
             for role in _ROLE_ORDER
@@ -260,23 +264,33 @@ def _resolve_or_provision_user(
             detail="Entra ID token missing oid",
         )
 
-    group_ids = extract_group_ids_from_claims(claims)
-    if group_ids is None:
-        # Overage mode: the ID token suppressed the groups claim because the
-        # user is in too many groups. We need an access token with Graph
-        # permissions to fetch them; for now we treat overage users as the
-        # default role and rely on the operator to either configure smaller
-        # security groups or grant Graph access. Documented in docs/auth.md.
-        group_ids = []
-
-    role = role_from_group_ids(group_ids)
+    role = role_from_app_roles(claims.get("roles"))
+    if role is None:
+        group_ids = extract_group_ids_from_claims(claims)
+        if group_ids is None:
+            # No app roles, and the groups claim is unusable — either absent or
+            # suppressed by Entra's per-token overage cap, which leaves only a
+            # _claim_names pointer behind. Both land everyone on public_reader,
+            # so say so loudly. Documented in docs/auth.md.
+            _log.warning(
+                "Entra token for oid=%s has no app roles and no usable groups "
+                "claim (overage=%s) — assigning public_reader; assign the "
+                "security groups to app roles or set "
+                "groupMembershipClaims=ApplicationGroup",
+                oid,
+                isinstance(claims.get("_claim_names"), dict),
+            )
+            role = UserRole.PublicReader
+        else:
+            role = role_from_group_ids(group_ids)
 
     if config.public_reader_disabled() and role == UserRole.PublicReader:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                "This account has no Reader/Writer/Admin group membership and "
-                "public-reader access is disabled on this deployment."
+                "This account has no Reader/Writer/Admin app role or group "
+                "membership and public-reader access is disabled on this "
+                "deployment."
             ),
         )
 

@@ -207,7 +207,7 @@ itself is always available.
 Accounts live in **Manage ▸ Users**, where admins create users, set roles, reset
 passwords, and deactivate or delete accounts. Where single sign-on (Entra) is
 enabled, those users are provisioned and role-synced automatically from their
-group membership.
+app-role assignment in Entra.
 
 ## Exploring the radar, list and tree
 
