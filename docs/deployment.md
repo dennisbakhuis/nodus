@@ -36,6 +36,14 @@ The backend hosts the API and the OpenAPI/Swagger UI under `/api/*`. The fronten
 
 Note: SQLite is convenient for proof-of-concept but unsuitable for multiple replicas or concurrent writes at scale. Switch to Postgres before exposing the app to a team.
 
+> **Schema upgrades are not automatic on PostgreSQL/MySQL.** The app creates
+> missing tables at startup but never alters an existing one, and the built-in
+> column-upgrade step runs on SQLite only. A release that adds a column will
+> therefore work on a new database and fail at query time on an existing
+> PostgreSQL/MySQL one. Until Alembic is adopted (see
+> [`../ARCHITECTURE.md`](../ARCHITECTURE.md)), take a backup and apply such
+> changes with your own DDL before deploying.
+
 ### 3. Environment variables
 
 Configure all `NODUS_`-prefixed variables. The complete reference with defaults is in [`src/backend/.env.example`](../src/backend/.env.example).
@@ -85,7 +93,7 @@ After the database is initialised:
 ## Operations notes
 
 - **Backups**: scheduled snapshots of the database. See [`src/backend/README.md`](../src/backend/README.md) for the included backup/restore commands (SQLite only — for managed databases use the provider's snapshot tooling).
-- **Upgrades**: pull the new image / code; if a schema migration is included, run migrations before swapping traffic.
+- **Upgrades**: pull the new image / code. There is no migration runner yet — see the warning under **Database** above and the schema-evolution section in [`../ARCHITECTURE.md`](../ARCHITECTURE.md). On SQLite the app self-upgrades added columns at startup; on PostgreSQL/MySQL you must apply schema changes yourself before swapping traffic.
 - **Logs**: backend logs are stdout JSON; route them to your logging stack.
 - **Monitoring**: probe `GET /api/health`. The path may include the configured prefix (`NODUS_ROOT_PATH`).
 

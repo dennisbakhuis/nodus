@@ -62,6 +62,56 @@ The rationale is repeated, with operator framing, in [`docs/assessment-api.md`](
 
 ---
 
+## Schema evolution
+
+**Known gap — automatic schema upgrades run on SQLite only.** Adding a column
+to an existing table works in SQLite development and on a freshly created
+Postgres/MySQL database, and silently does nothing on a Postgres/MySQL database
+that already exists. Read this section before changing a model.
+
+The schema is declared by `SQLModel.metadata` and created with `create_all()`
+at startup (`src/backend/app/db.py`). `create_all()` adds missing *tables*; it
+never alters a table that is already there. Three hand-rolled helpers cover the
+difference:
+
+| Helper | What it does | Dialects |
+|--------|--------------|----------|
+| `_ensure_column()` | `PRAGMA table_info` then `ALTER TABLE … ADD COLUMN` when absent | SQLite only |
+| `_maybe_rebuild_user_table()` | Rebuilds `user` row-by-row to widen a CHECK constraint SQLite cannot alter in place | SQLite only |
+| `_ensure_person_profiles()` | `CREATE UNIQUE INDEX IF NOT EXISTS` plus a profile backfill | SQLite + Postgres |
+
+Only the third runs outside SQLite; `_apply_post_create_migrations()`, which
+wraps the first two, is guarded by `if IS_SQLITE`. These steps are re-scanned on
+every boot, are idempotent by construction, and keep no record of what has been
+applied — so there is no version, no ordering, and no way back.
+
+That is workable for a single-file SQLite deployment and is what has carried the
+project so far. It does not hold once a deployment moves to Postgres, which
+[`docs/deployment.md`](docs/deployment.md) recommends for anything beyond a
+proof of concept.
+
+### TODO — adopt Alembic
+
+Planned as its own change, **before the next schema change**, not alongside one.
+Introducing it while no migration is pending is what makes it cheap: the first
+revision is an empty baseline of the current schema rather than a reconstruction
+of history.
+
+1. Add the `alembic` dependency; `alembic.ini` plus `env.py` wired to
+   `SQLModel.metadata` and `NODUS_DATABASE_URL`.
+2. Autogenerate one baseline revision describing the schema as it stands.
+3. Add a `make migrate` target and run it on deploy, before traffic is swapped.
+4. Retire the SQLite-only helpers: keep them for one release so existing SQLite
+   databases still self-upgrade, then fold their effect into a real revision and
+   delete them.
+
+The risk in this work is the existing databases, not Alembic. A new database
+takes `alembic upgrade head`; a database that already has the schema must take
+`alembic stamp <baseline>` and must never be upgraded onto it. Write that
+procedure down before running it against prd, and take a backup first.
+
+---
+
 ## Authentication and visibility
 
 Four roles, three modes — full reference in [`docs/auth.md`](docs/auth.md):

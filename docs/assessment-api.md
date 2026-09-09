@@ -50,7 +50,7 @@ Auth: Writer or higher
 
 | Field | Type | Allowed values |
 |-------|------|----------------|
-| `trl` | integer or null | `1`–`12` (DB CHECK) |
+| `trl` | integer or null | `1`–`9`; the DB CHECK tolerates `1`–`12` for legacy rows |
 | `trl_notes` | string or null | Free text |
 | `strategic_relevance` | enum or null | `"High"`, `"Medium"`, `"Low"` |
 | `strategic_relevance_notes` | string or null | Free text |
@@ -196,7 +196,7 @@ Returns the append-only MovementEvent log for the technology, ordered by timesta
 ## Validation errors to expect
 
 - **422** — Invalid enum value (e.g. `time_to_mainstream` not one of `"0-2 yr"`, `"2-5 yr"`, `"5-7 yr"`, `"7-10 yr"`). Watch the literal spelling, especially the space before `yr`.
-- **422** — `trl` outside 1–12 is rejected by the database CHECK constraint as a 500 from the API if not caught at validation; supply a value in range.
+- **422** — `trl` outside 1–12 is rejected by the database CHECK constraint as a 500 from the API if not caught at validation. Use 1–9; 10–12 is tolerated only for legacy rows.
 - **404** — `tech_id` does not exist.
 - **401 / 403** — Caller is not a Writer (for `POST /technologies/{tech_id}/factsheet` and `PATCH /technologies/{tech_id}`).
 - **409 / DB integrity** — Setting `registry_status = "On Radar"` without both `current_ring` and `current_segment_id` violates the check constraint.

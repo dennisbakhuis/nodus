@@ -23,6 +23,15 @@ two things:
   sidebar (**−**, the percentage, **⌂** home, **+**) do the same.
 - **Switch cycle** at the top of the sidebar to view a past radar snapshot.
 
+## Linking to a technology
+
+Every technology has a permanent link. Open it and the address bar becomes
+`/radar/<name>` — **🔗 Copy link** at the top of the detail panel copies that
+link to the clipboard. Paste it into a mail, a slide, or a ticket and it opens
+the radar with that technology's panel already open. The link survives renaming
+the technology only if its slug is unchanged; the slug is shown read-only in the
+edit modal. Rows in the **List** view are linkable the same way.
+
 ## Colour and shape
 
 By default dots are coloured by segment and drawn as plain dots. Two sidebar

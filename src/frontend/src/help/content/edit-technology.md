@@ -30,12 +30,21 @@ The narrative shown on the detail page: **Summary** (short), **Description**,
 **Key players**, **Recommended next steps**, and **Current challenges** — plus
 **Publication links** (URL + label) and the **tax-credit candidate** flag.
 
+These text fields accept **Markdown**, so `- ` at the start of a line makes a
+bullet list, `**text**` makes bold, `[label](url)` makes a link, and `|` tables
+work. Plain text is still fine — a single newline stays a line break.
+
 ## Assessment
 
-Scored attributes, each with optional notes: **TRL** (1–9), **Time to
+Scored attributes, each with a notes field: **TRL** (1–9), **Time to
 mainstream**, **Strategic relevance**, **Impact potential**, **Implementation
 feasibility**, and **Collaboration potential**. These feed the list and radar
 filters and encodings.
+
+Use the notes for the **reasoning behind the score** — one to three sentences,
+citing the evidence you used. Always leave a note for a top-of-scale rating or a
+boundary call. The score is the headline; the note is what lets the next curator
+check it. Notes are shown under their score on the detail page.
 
 ## People
 

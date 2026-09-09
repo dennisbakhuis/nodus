@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { RadarData, RadarEntry, TechnologyRelation } from "../radar/types";
 import { HeroImage } from "../radar/HeroImage";
 import { PeerReferencePanel } from "../radar/PeerReferencePanel";
@@ -10,6 +17,7 @@ import {
   relationGroupLabel,
   type RelationGroupKey,
 } from "../radar/relations";
+import { FactsheetMarkdown } from "./FactsheetMarkdown";
 import { InitiativeEditor } from "./InitiativeEditor";
 import {
   addPersonToTopic,
@@ -141,10 +149,8 @@ const MOVEMENT_LABELS: Record<string, string> = {
 };
 
 function cleanText(raw: string): string {
-  const hrIdx = raw.search(/\n---+(\n|$)/);
-  const text = hrIdx !== -1 ? raw.slice(0, hrIdx) : raw;
   // eslint-disable-next-line no-control-regex
-  return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "").trim();
+  return raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "").trim();
 }
 
 export function TopicView({
@@ -507,14 +513,6 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-const bodyTextStyle: React.CSSProperties = {
-  margin: 0,
-  fontSize: "var(--font-size-body)",
-  color: "var(--color-dark-text)",
-  lineHeight: 1.6,
-  whiteSpace: "pre-wrap",
-};
-
 function FactsheetContent({
   factsheet,
 }: {
@@ -539,7 +537,7 @@ function FactsheetContent({
         return (
           <section key={key} style={{ marginBottom: "var(--space-5)" }}>
             <SectionHeading>{label}</SectionHeading>
-            <p style={bodyTextStyle}>{cleaned}</p>
+            <FactsheetMarkdown source={cleaned} />
           </section>
         );
       })}
@@ -1182,28 +1180,48 @@ function AssessmentSection({
   const trl = assessment["trl"] as number | null | undefined;
   const trlPhase = getTrlPhase(trl);
 
-  const rows: [string, string][] = [
+  const notes = (key: string): string => {
+    const raw = assessment[key];
+    return typeof raw === "string" ? raw.trim() : "";
+  };
+
+  const rows: [string, string, string][] = [
     [
       "TRL",
       trl
         ? `${String(trl)}${trlPhase !== "Invalid" ? ` — ${trlPhase}` : ""}`
         : "—",
+      notes("trl_notes"),
     ],
-    ["Time to Mainstream", String(assessment["time_to_mainstream"] ?? "—")],
-    ["Strategic Relevance", String(assessment["strategic_relevance"] ?? "—")],
-    ["Impact Potential", String(assessment["impact_potential"] ?? "—")],
+    [
+      "Time to Mainstream",
+      String(assessment["time_to_mainstream"] ?? "—"),
+      notes("time_to_mainstream_notes"),
+    ],
+    [
+      "Strategic Relevance",
+      String(assessment["strategic_relevance"] ?? "—"),
+      notes("strategic_relevance_notes"),
+    ],
+    [
+      "Impact Potential",
+      String(assessment["impact_potential"] ?? "—"),
+      notes("impact_potential_notes"),
+    ],
     [
       "Implementation Feasibility",
       String(assessment["implementation_feasibility"] ?? "—"),
+      notes("implementation_feasibility_notes"),
     ],
     [
       "Collaboration Potential",
       String(assessment["collaboration_potential"] ?? "—"),
+      notes("collaboration_potential_notes"),
     ],
   ];
 
   const hasData = rows.some(
-    ([, v]) => v !== "—" && v !== "None" && v !== "null",
+    ([, v, n]) => (v !== "—" && v !== "None" && v !== "null") || n,
   );
   if (!hasData) return null;
 
@@ -1214,27 +1232,44 @@ function AssessmentSection({
         style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}
       >
         <tbody>
-          {rows.map(([label, value]) => (
-            <tr key={label}>
-              <td
-                style={{
-                  padding: "4px 0",
-                  color: "var(--color-muted-text)",
-                  width: "55%",
-                }}
-              >
-                {label}
-              </td>
-              <td
-                style={{
-                  padding: "4px 0",
-                  color: "var(--color-dark-text)",
-                  fontWeight: "var(--font-weight-medium)",
-                }}
-              >
-                {value}
-              </td>
-            </tr>
+          {rows.map(([label, value, note]) => (
+            <Fragment key={label}>
+              <tr>
+                <td
+                  style={{
+                    padding: "4px 0",
+                    color: "var(--color-muted-text)",
+                    width: "55%",
+                  }}
+                >
+                  {label}
+                </td>
+                <td
+                  style={{
+                    padding: "4px 0",
+                    color: "var(--color-dark-text)",
+                    fontWeight: "var(--font-weight-medium)",
+                  }}
+                >
+                  {value}
+                </td>
+              </tr>
+              {note && (
+                <tr>
+                  <td
+                    colSpan={2}
+                    style={{
+                      padding: "0 0 8px 0",
+                      color: "var(--color-muted-text)",
+                      fontStyle: "italic",
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {note}
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -1674,6 +1709,48 @@ function FactsheetEditFields({ edit }: { edit: InlineEditProps }) {
   );
 }
 
+/** One assessment criterion: its score control plus the notes that justify it.
+ *
+ * Declared at module scope on purpose. Defined inside `AssessmentEditFields` it
+ * was a fresh component type on every render, so each keystroke remounted the
+ * textarea and dropped focus after one character — the notes fields were
+ * effectively unusable.
+ */
+function AssessmentBlock({
+  label,
+  notesValue,
+  onNotesChange,
+  children,
+}: {
+  label: string;
+  notesValue: string;
+  onNotesChange: React.ChangeEventHandler<HTMLTextAreaElement>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ marginBottom: "var(--space-3)" }}>
+      <div
+        style={{
+          color: "var(--color-muted-text)",
+          fontSize: "12px",
+          fontWeight: "var(--font-weight-medium)",
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </div>
+      {children}
+      <AutoGrowTextarea
+        value={notesValue}
+        onChange={onNotesChange}
+        placeholder="Notes — the reasoning behind this score"
+        style={{ ...editTextareaStyle, minHeight: "72px", marginTop: 4 }}
+        aria-label={`${label} notes`}
+      />
+    </div>
+  );
+}
+
 function AssessmentEditFields({ edit }: { edit: InlineEditProps }) {
   const update =
     (
@@ -1688,50 +1765,15 @@ function AssessmentEditFields({ edit }: { edit: InlineEditProps }) {
   const IMPACT_OPTIONS = ["", "Transformational", "High", "Medium", "Low"];
   const TTM_OPTIONS = ["", "0-2 yr", "2-5 yr", "5-7 yr", "7-10 yr"];
 
-  const Block = ({
-    label,
-    valueKey,
-    notesKey,
-    children,
-  }: {
-    label: string;
-    valueKey: keyof InlineEditForm;
-    notesKey: keyof InlineEditForm;
-    children: React.ReactNode;
-  }) => (
-    <div style={{ marginBottom: "var(--space-2)" }}>
-      <div
-        style={{
-          color: "var(--color-muted-text)",
-          fontSize: "12px",
-          fontWeight: "var(--font-weight-medium)",
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </div>
-      {children}
-      <AutoGrowTextarea
-        value={edit.values[notesKey]}
-        onChange={update(notesKey)}
-        placeholder="Notes (optional)"
-        style={{
-          ...editTextareaStyle,
-          minHeight: "44px",
-          marginTop: 4,
-          fontSize: "12px",
-        }}
-        aria-label={`${label} notes`}
-      />
-      {((_: keyof InlineEditForm) => null)(valueKey)}
-    </div>
-  );
-
   return (
     <section style={{ marginBottom: "var(--space-5)" }}>
       <SectionHeading>Assessment</SectionHeading>
       <div style={{ display: "flex", flexDirection: "column" }}>
-        <Block label="TRL (1–9)" valueKey="trl" notesKey="trl_notes">
+        <AssessmentBlock
+          label="TRL (1–9)"
+          notesValue={edit.values.trl_notes}
+          onNotesChange={update("trl_notes")}
+        >
           <input
             type="number"
             min={1}
@@ -1741,11 +1783,11 @@ function AssessmentEditFields({ edit }: { edit: InlineEditProps }) {
             style={editSelectStyle}
             aria-label="TRL"
           />
-        </Block>
-        <Block
+        </AssessmentBlock>
+        <AssessmentBlock
           label="Time to Mainstream"
-          valueKey="time_to_mainstream"
-          notesKey="time_to_mainstream_notes"
+          notesValue={edit.values.time_to_mainstream_notes}
+          onNotesChange={update("time_to_mainstream_notes")}
         >
           <select
             value={edit.values.time_to_mainstream}
@@ -1759,11 +1801,11 @@ function AssessmentEditFields({ edit }: { edit: InlineEditProps }) {
               </option>
             ))}
           </select>
-        </Block>
-        <Block
+        </AssessmentBlock>
+        <AssessmentBlock
           label="Strategic Relevance"
-          valueKey="strategic_relevance"
-          notesKey="strategic_relevance_notes"
+          notesValue={edit.values.strategic_relevance_notes}
+          onNotesChange={update("strategic_relevance_notes")}
         >
           <select
             value={edit.values.strategic_relevance}
@@ -1777,11 +1819,11 @@ function AssessmentEditFields({ edit }: { edit: InlineEditProps }) {
               </option>
             ))}
           </select>
-        </Block>
-        <Block
+        </AssessmentBlock>
+        <AssessmentBlock
           label="Impact Potential"
-          valueKey="impact_potential"
-          notesKey="impact_potential_notes"
+          notesValue={edit.values.impact_potential_notes}
+          onNotesChange={update("impact_potential_notes")}
         >
           <select
             value={edit.values.impact_potential}
@@ -1795,11 +1837,11 @@ function AssessmentEditFields({ edit }: { edit: InlineEditProps }) {
               </option>
             ))}
           </select>
-        </Block>
-        <Block
+        </AssessmentBlock>
+        <AssessmentBlock
           label="Implementation Feasibility"
-          valueKey="implementation_feasibility"
-          notesKey="implementation_feasibility_notes"
+          notesValue={edit.values.implementation_feasibility_notes}
+          onNotesChange={update("implementation_feasibility_notes")}
         >
           <select
             value={edit.values.implementation_feasibility}
@@ -1813,11 +1855,11 @@ function AssessmentEditFields({ edit }: { edit: InlineEditProps }) {
               </option>
             ))}
           </select>
-        </Block>
-        <Block
+        </AssessmentBlock>
+        <AssessmentBlock
           label="Collaboration Potential"
-          valueKey="collaboration_potential"
-          notesKey="collaboration_potential_notes"
+          notesValue={edit.values.collaboration_potential_notes}
+          onNotesChange={update("collaboration_potential_notes")}
         >
           <select
             value={edit.values.collaboration_potential}
@@ -1831,7 +1873,7 @@ function AssessmentEditFields({ edit }: { edit: InlineEditProps }) {
               </option>
             ))}
           </select>
-        </Block>
+        </AssessmentBlock>
         <div style={{ marginTop: "var(--space-3)" }}>
           <div
             style={{

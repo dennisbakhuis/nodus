@@ -46,10 +46,13 @@ class Assessment(SQLModel, table=True):
     """Structured six-criterion scoring record attached to one Factsheet version.
 
     trl_phase is NOT stored — it is derived at render time:
-    TRL 1-3 → Discovery; 4-6 → Development; 7-8 → Demonstration; 9 → Deployment;
-    10-12 → Scale (IEA-extended).
+    TRL 1-3 → Discovery; 4-6 → Development; 7-8 → Demonstration; 9 → Deployment.
 
-    trl CHECK enforces 1 ≤ trl ≤ 12 (NASA 1-9 + IEA extended 10-12).
+    The scale is NASA TRL 1-9; that is what the editor accepts and what new
+    assessments use. The CHECK is deliberately wider (1 ≤ trl ≤ 12) so legacy
+    and imported rows written against the IEA-extended 10-12 range still load;
+    those render as the Scale phase.
+
     All criterion fields are nullable because early-stage factsheets may lack full scores.
     """
 

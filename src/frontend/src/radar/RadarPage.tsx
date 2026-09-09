@@ -271,7 +271,9 @@ export function RadarPage() {
 
   const handlePanelClose = useCallback(() => {
     setSelectedEntry(null);
-    window.history.replaceState({}, "", "/radar");
+    // Drop the slug but keep the query string — it holds the cycle and the
+    // active filters, which the reader has not changed by closing a panel.
+    window.history.replaceState({}, "", `/radar${window.location.search}`);
   }, []);
 
   const handleSegmentClick = useCallback((idx: number) => {

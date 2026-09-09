@@ -174,4 +174,44 @@ describe("DetailPanel", () => {
     });
     expect(container.innerHTML).not.toMatch(/@\S+\.\S+/);
   });
+
+  it("puts the slug in the URL and keeps the query string", () => {
+    window.history.replaceState({}, "", "/radar?cycle=abc&ring=Invest");
+    render(
+      <MemoryRouter>
+        <DetailPanel
+          entry={sampleEntry}
+          data={mockSmallRadarData}
+          relations={[]}
+          onClose={vi.fn()}
+          onNavigate={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+    expect(window.location.pathname).toBe(`/radar/${sampleEntry.slug}`);
+    expect(window.location.search).toBe("?cycle=abc&ring=Invest");
+  });
+
+  it("copies a shareable link to the technology", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    render(
+      <MemoryRouter>
+        <DetailPanel
+          entry={sampleEntry}
+          data={mockSmallRadarData}
+          relations={[]}
+          onClose={vi.fn()}
+          onNavigate={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByLabelText("Copy link to this technology"));
+    expect(writeText).toHaveBeenCalledWith(
+      `${window.location.origin}/radar/${sampleEntry.slug}`
+    );
+    await screen.findByText("✓ Copied");
+  });
 });
