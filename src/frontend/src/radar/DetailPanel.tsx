@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { RadarEntry, RadarData, TechnologyRelation } from "./types";
 import { getTopic } from "../api/client";
 import { listMovements } from "../manage/api";
@@ -71,11 +77,33 @@ export function DetailPanel({
   const [movements, setMovements] = useState<MovementEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyLink = useCallback(() => {
+    if (!entry) return;
+    const url = `${window.location.origin}${basePath}/${entry.slug}`;
+    void navigator.clipboard
+      .writeText(url)
+      .then(() => setCopied(true))
+      .catch(() => setCopied(false));
+  }, [entry, basePath]);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
 
   useEffect(() => {
     if (!entry) return;
     if (syncUrl) {
-      window.history.replaceState({}, "", `${basePath}/${entry.slug}`);
+      // Keep the query string: it carries the cycle and the active filters,
+      // so dropping it would silently move the reader to the current cycle.
+      window.history.replaceState(
+        {},
+        "",
+        `${basePath}/${entry.slug}${window.location.search}`,
+      );
     }
     setLoading(true);
     setDetail(null);
@@ -238,6 +266,40 @@ export function DetailPanel({
               zIndex: 1,
             }}
           >
+            {entry && syncUrl && (
+              <button
+                onClick={copyLink}
+                aria-label="Copy link to this technology"
+                title="Copy a link to this technology"
+                style={{
+                  background: "rgba(0,0,0,0.5)",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  color: "var(--color-white)",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  lineHeight: 1,
+                  padding: "6px 10px",
+                  borderRadius: "6px",
+                  fontWeight: "var(--font-weight-medium)",
+                  fontFamily: "var(--font-family)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  backdropFilter: "blur(4px)",
+                  transition: "background 150ms",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background =
+                    "rgba(0,0,0,0.7)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background =
+                    "rgba(0,0,0,0.5)";
+                }}
+              >
+                {copied ? "✓ Copied" : "🔗 Copy link"}
+              </button>
+            )}
             {onExpand && entry && canExpand && (
               <button
                 onClick={onExpand}

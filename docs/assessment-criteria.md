@@ -21,7 +21,12 @@ Scores are immutable once written. To revise, create a new factsheet version (wh
 ## 1. Technology Readiness (TRL)
 
 **Field:** `trl` (integer) and `trl_notes` (text).
-**Scale:** 1–12 (NASA 1–9, IEA-extended 10–12). Database CHECK enforces `1 ≤ trl ≤ 12`.
+**Scale:** 1–9 (NASA Technology Readiness Levels). This is the range the editor
+accepts and the range to use for every new assessment.
+
+> The database CHECK is deliberately wider (`1 ≤ trl ≤ 12`) so historical or
+> imported rows that used the IEA-extended 10–12 range still load and render.
+> Do not enter 10–12 for new assessments — the editor will not accept them.
 
 Maturity along the standard Technology Readiness Level scale. The single objective anchor in the framework — even when every other criterion is qualitative, TRL gives one number that can be compared across technologies.
 
@@ -33,7 +38,7 @@ Maturity along the standard Technology Readiness Level scale. The single objecti
 | 4–6 | Development |
 | 7–8 | Demonstration |
 | 9   | Deployment |
-| 10–12 | Scale |
+| 10–12 | Scale — legacy/imported rows only, not enterable |
 
 **Choosing a level:**
 

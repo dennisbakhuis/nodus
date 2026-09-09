@@ -55,7 +55,7 @@ If a criterion cannot be agreed on in 30 minutes, leave it null. Partial assessm
 2. Switch to edit mode (Writer role required).
 3. Fill the factsheet fields (summary, description, key players, recommended next steps, current challenges, publication links).
 4. Fill the assessment block:
-   - **TRL** — integer 1–12.
+   - **TRL** — integer 1–9.
    - **Strategic Relevance** — High / Medium / Low.
    - **Impact Potential** — Transformational / High / Medium / Low.
    - **Implementation Feasibility** — High / Medium / Low.

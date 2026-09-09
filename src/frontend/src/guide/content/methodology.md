@@ -173,6 +173,10 @@ Click any dot (on the radar) or row (on the list) to open its **detail panel**.
 From there, **Open full detail** shows the complete factsheet, and writers get an
 **✎ Edit** button to change it.
 
+Each technology has a permanent link — **🔗 Copy link** in the detail panel — so
+you can point at one from a mail, a slide or a ticket and it opens with that
+technology already showing.
+
 ## Roles & access
 
 Nodus has four roles, each building on the previous, plus fine-grained control

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { fetchCurrentRadar, fetchRelations } from "./api";
 import { fetchHistoricalRadar } from "../api/radar-snapshot";
 import { Sidebar } from "./Sidebar";
@@ -45,6 +45,7 @@ export function ListPage() {
   );
   const [relations, setRelations] = useState<TechnologyRelation[]>([]);
 
+  const { slug: urlSlug } = useParams<{ slug?: string }>();
   const [selectedEntry, setSelectedEntry] = useState<RadarEntry | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -98,12 +99,19 @@ export function ListPage() {
     loader
       .then((d) => {
         setData(d);
+        if (urlSlug) {
+          const found = d.entries.find((e) => e.slug === urlSlug);
+          if (found) {
+            setSelectedEntry(found);
+            setModalOpen(true);
+          }
+        }
       })
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : "Failed to load radar data"),
       )
       .finally(() => setLoading(false));
-  }, [historicalCycleId]);
+  }, [historicalCycleId, urlSlug]);
 
   useEffect(() => {
     if (!data) return;
@@ -120,11 +128,19 @@ export function ListPage() {
   const handleRowClick = useCallback((entry: RadarEntry) => {
     setSelectedEntry(entry);
     setModalOpen(true);
+    // Mirrors the radar's DetailPanel: put the slug in the URL so a row can be
+    // linked to, keeping the query string that carries cycle and filters.
+    window.history.replaceState(
+      {},
+      "",
+      `/list/${entry.slug}${window.location.search}`,
+    );
   }, []);
 
   const handleModalClose = useCallback(() => {
     setModalOpen(false);
     setSelectedEntry(null);
+    window.history.replaceState({}, "", `/list${window.location.search}`);
   }, []);
 
   if (loading) {

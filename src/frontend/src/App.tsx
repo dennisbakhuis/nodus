@@ -50,6 +50,16 @@ function RoutedContent() {
             </CapabilityRoute>
           }
         />
+        {/* Same page, with a technology opened — the list's counterpart to
+            /radar/:slug, so a row can be linked to as well as a dot. */}
+        <Route
+          path="/list/:slug"
+          element={
+            <CapabilityRoute capability="canViewList">
+              <ListPage />
+            </CapabilityRoute>
+          }
+        />
         {/* The tree fetches every registry status so it can tell a label group
             from a Backlog technology, so it sits behind the same capability
             that already gates the list rather than exposing Backlog and
