@@ -5,10 +5,10 @@ import re
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import asc, exists
+from sqlalchemy import asc, exists, or_
 from sqlmodel import col, select
 
-from app.auth import OptionalUserDep, WriterDep, is_public_only
+from app.auth import AdminDep, OptionalUserDep, WriterDep, is_public_only
 from app.db import SessionDep
 from app.models.alias import Alias
 from app.models.assessment import Assessment
@@ -18,6 +18,7 @@ from app.models.movement_event import EventType, MovementEvent
 from app.models.party import Party
 from app.models.peer_reference import PeerReference
 from app.models.person import Person
+from app.models.relation import Relation
 from app.models.technology import RegistryStatus, Technology
 from app.models.topic import Topic
 from app.models.topic_person_link import TopicPersonLink
@@ -607,6 +608,105 @@ def update_topic(
     session.commit()
     session.refresh(topic)
     return _topic_to_read(topic, session)
+
+
+@router.delete("/technologies/{tech_id}", status_code=204)
+def delete_technology(
+    tech_id: uuid.UUID,
+    session: SessionDep,
+    _user: AdminDep,
+    delete_topic_too: bool = Query(default=False),
+) -> None:
+    """Permanently delete a Technology and everything it owns.
+
+    Archiving is the normal way to retire a technology: the registry is meant to
+    be institutional memory, and an assessed-and-declined entry answers "what did
+    we choose not to pursue?". This endpoint exists for the entries that were
+    never a decision at all — rows an importer created from someone else's index
+    or from a scraped page, which only pollute search and duplicate detection.
+
+    Refuses anything still On Radar, so a live radar entry cannot be removed by
+    accident; archive it first. Admin only.
+
+    Deletes the factsheet stream and each factsheet's assessment, the movement
+    events, the initiatives, and every relation touching the Topic. Pass
+    ``delete_topic_too`` to remove the Topic itself along with its aliases,
+    lifting any group children to the Topic's own parent so no subtree is
+    orphaned.
+
+    Parameters
+    ----------
+    tech_id : uuid.UUID
+        Technology identifier.
+    delete_topic_too : bool
+        Also delete the owning Topic, its aliases and person links.
+    """
+    tech = session.get(Technology, tech_id)
+    if tech is None:
+        raise HTTPException(status_code=404, detail="Technology not found")
+    if tech.registry_status == str(RegistryStatus.OnRadar):
+        raise HTTPException(
+            status_code=409,
+            detail="This technology is On Radar; archive it before deleting.",
+        )
+
+    topic_id = tech.topic_id
+
+    # current_factsheet_id is a circular FK, so break it before the factsheets go.
+    tech.current_factsheet_id = None
+    session.add(tech)
+    session.flush()
+
+    for factsheet in session.exec(
+        select(Factsheet).where(Factsheet.technology_id == tech_id)
+    ).all():
+        for assessment in session.exec(
+            select(Assessment).where(Assessment.factsheet_id == factsheet.id)
+        ).all():
+            session.delete(assessment)
+        session.delete(factsheet)
+
+    for event in session.exec(
+        select(MovementEvent).where(MovementEvent.technology_id == tech_id)
+    ).all():
+        session.delete(event)
+
+    for initiative in session.exec(
+        select(Initiative).where(Initiative.technology_id == tech_id)
+    ).all():
+        session.delete(initiative)
+
+    for relation in session.exec(
+        select(Relation).where(
+            or_(Relation.from_topic_id == topic_id, Relation.to_topic_id == topic_id)
+        )
+    ).all():
+        session.delete(relation)
+
+    session.delete(tech)
+    session.flush()
+
+    if delete_topic_too:
+        topic = session.get(Topic, topic_id)
+        if topic is not None:
+            for child in session.exec(
+                select(Topic).where(Topic.parent_topic_id == topic_id)
+            ).all():
+                child.parent_topic_id = topic.parent_topic_id
+                session.add(child)
+            for alias in session.exec(select(Alias).where(Alias.topic_id == topic_id)).all():
+                session.delete(alias)
+            for link in session.exec(
+                select(TopicPersonLink).where(TopicPersonLink.topic_id == topic_id)
+            ).all():
+                session.delete(link)
+            for ref in session.exec(
+                select(PeerReference).where(PeerReference.topic_id == topic_id)
+            ).all():
+                session.delete(ref)
+            session.delete(topic)
+
+    session.commit()
 
 
 @router.delete("/topics/{topic_id}", status_code=204)
