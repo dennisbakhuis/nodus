@@ -16,7 +16,7 @@ from app.models.factsheet import Factsheet
 from app.models.initiative import Initiative
 from app.models.movement_event import EventType, MovementEvent
 from app.models.party import Party
-from app.models.peer_reference import PeerReference
+from app.models.peer_reference import PeerReference, PeerReferenceUrl
 from app.models.person import Person
 from app.models.relation import Relation
 from app.models.technology import RegistryStatus, Technology
@@ -664,7 +664,9 @@ def delete_technology(
             select(Assessment).where(Assessment.factsheet_id == factsheet.id)
         ).all():
             session.delete(assessment)
+        session.flush()
         session.delete(factsheet)
+    session.flush()
 
     for event in session.exec(
         select(MovementEvent).where(MovementEvent.technology_id == tech_id)
@@ -700,10 +702,23 @@ def delete_technology(
                 select(TopicPersonLink).where(TopicPersonLink.topic_id == topic_id)
             ).all():
                 session.delete(link)
-            for ref in session.exec(
+            refs = session.exec(
                 select(PeerReference).where(PeerReference.topic_id == topic_id)
-            ).all():
+            ).all()
+            for ref in refs:
+                for url in session.exec(
+                    select(PeerReferenceUrl).where(
+                        PeerReferenceUrl.peer_reference_id == ref.id
+                    )
+                ).all():
+                    session.delete(url)
+            # Children before parents. SQLite enforces foreign keys on every
+            # connection, so a parent DELETE that reaches the database first is
+            # rejected outright.
+            session.flush()
+            for ref in refs:
                 session.delete(ref)
+            session.flush()
             session.delete(topic)
 
     session.commit()

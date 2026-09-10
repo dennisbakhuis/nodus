@@ -113,3 +113,47 @@ def test_writer_cannot_delete(
     )
     assert resp.status_code == 403
     assert client.get(f"/api/topics/{made['slug']}").json()["technology"] is not None
+
+
+def _add_peer_reference_with_urls(client: TestClient, topic_id: str) -> str:
+    """Attach a peer reference carrying URLs, as every imported topic has."""
+    parties = client.get("/api/parties").json()
+    party_id = parties[0]["id"] if parties else client.post(
+        "/api/parties", json={"name": "Probe Party"}
+    ).json()["id"]
+    resp = client.post(
+        f"/api/manage/topics/{topic_id}/peer-references",
+        json={
+            "party_id": party_id,
+            "peer_title": "peer entry",
+            "summary": "s",
+            "urls": [{"url": "https://example.com/a", "label": "radar", "display_order": 0}],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def test_delete_handles_peer_references_that_have_urls(client: TestClient) -> None:
+    """The production case: every imported topic carries peer references with URLs.
+
+    peer_reference_url references peer_reference, so deleting the reference
+    without its URLs trips the foreign key. The first version of this endpoint
+    had no such fixture and passed while failing against real data.
+    """
+    made = _make(client, "Imported With Peer Urls")
+    _add_peer_reference_with_urls(client, made["topic_id"])
+
+    resp = client.delete(f"/api/technologies/{made['tech_id']}?delete_topic_too=true")
+    assert resp.status_code == 204, resp.text
+    assert client.get(f"/api/topics/{made['slug']}").status_code == 404
+
+
+def test_peer_reference_delete_cascades_its_urls(client: TestClient) -> None:
+    """Deleting a peer reference that has URLs must succeed on its own endpoint."""
+    made = _make(client, "Peer Reference Cascade")
+    ref_id = _add_peer_reference_with_urls(client, made["topic_id"])
+
+    resp = client.delete(f"/api/manage/topics/{made['topic_id']}/peer-references/{ref_id}")
+    assert resp.status_code == 204, resp.text
+    assert client.get(f"/api/topics/{made['slug']}").json()["peer_references"] == []

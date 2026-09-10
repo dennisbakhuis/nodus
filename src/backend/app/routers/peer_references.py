@@ -218,6 +218,10 @@ def delete_peer_reference(
         select(PeerReferenceUrl).where(PeerReferenceUrl.peer_reference_id == peer_ref_id)
     ).all():
         session.delete(url)
+    # Flush the child deletes before the parent. Without it the unit of work can
+    # emit DELETE FROM peer_reference first and SQLite, which enforces foreign
+    # keys on every connection, rejects it.
+    session.flush()
 
     session.delete(pr)
     session.commit()
