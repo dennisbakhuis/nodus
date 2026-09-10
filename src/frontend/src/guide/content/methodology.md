@@ -77,6 +77,30 @@ year?" and "what did we choose not to pursue?".
 > **In Nodus** — the registry is the **List** view. Filter by **Registry Status**
 > to see Backlog intake, the live radar, or the archive. Archiving never deletes.
 
+### Naming technologies
+
+A registry is only searchable if its names are predictable, and duplicates that
+differ only in wording are invisible until someone reads the whole list. Agree a
+convention and hold to it:
+
+- **One language**, one spelling system, **Title Case**. _Quantum Technologies_
+  and _Quantum technologie_ are two entries for one thing.
+- **A noun phrase for the thing itself**, not the benefit or the project.
+- **Acronym or expansion, never both** — put the other form in **Aliases**,
+  which is what stops the duplicate being created.
+- **Spell "and", and treat it as a warning.** A conjunction usually means two
+  technologies wearing one entry: _Federated Learning and Data Fusion_ is really
+  _Federated Learning_.
+- **Singular**, unless the thing is only ever plural.
+- **No vendor or product names** — those belong in **Key players**.
+- **Never let _Advanced_, _Smart_, _Innovative_, _Emerging_, _New_ or
+  _Next-Generation_ be the distinguishing word.** If removing it collides with
+  an existing entry, you have found a duplicate, not a new technology.
+
+The last two cause most of the duplication in practice. Aliases are the tool
+that makes the rest safe: one canonical name, every other form recorded against
+it, so search and the duplicate warning both find it.
+
 ### Assessing a technology
 
 Assessment turns opinion into a comparable judgement by scoring each technology
@@ -343,7 +367,10 @@ The modal's own **? Help** button explains each field.
 
 ### Groups and relations
 
-Two different ways to connect technologies:
+Two different ways to connect technologies, and the distinction is worth getting
+right because they are easy to confuse:
+
+> **Groups say what something _is_. Relations say what something _touches_.**
 
 - **Part of (groups)** files a technology into a **family** — a hierarchy for
   navigation and filtering that never moves the dot. A family can carry a
@@ -353,6 +380,43 @@ Two different ways to connect technologies:
   together, the profile above the factsheet.
 - **Relations** record **influence** (drives, driven by, relates to, hinders,
   hindered by) — a graph, shown as connection lines on the radar.
+
+#### One parent, always
+
+A technology sits in **exactly one** group. The hierarchy is a strict tree, not
+a set of overlapping tags. This is deliberate: a group answers "what kind of
+thing is this?", and a thing is one kind of thing. The radar assumes it too — a
+dot occupies one wedge, so a technology in two families would be drawn twice or
+placed arbitrarily.
+
+When something seems to belong in two families, it is nearly always one of
+three things, and only the last needs a relation:
+
+1. **The two groups are the same idea under different names.** Merge them. Two
+   umbrellas competing for the same children are one umbrella.
+2. **One of them is a theme, not a family.** "Everything in the offshore
+   programme" is not a kind of technology. **Segments** and **strategic
+   innovation fields** are the axes that cut across the tree by design.
+3. **The membership is genuine but secondary.** File it under its primary
+   family and add a **relation** to the other one — a relation may point at a
+   group node, so a whole family is a valid target.
+
+_Power-to-X-to-Power_ is the worked example: structurally a Power-to-X variant,
+so that is its parent, but it behaves like storage, so it carries a `relates to`
+link to the _Energy Storage_ family. Readers browsing storage still find it, and
+the tree stays unambiguous.
+
+Reach for that third case sparingly. If more than a handful of technologies need
+it, the taxonomy is wrong rather than the rule.
+
+#### Keeping the set small
+
+Groups are navigation, and navigation stops working when there is too much of
+it. A group should have **at least two children**, and a boundary you can state
+in one sentence — if "what belongs here" is hard to write, the group is a mood
+rather than a family. Prefer **fewer, broader families**: ten a reader can hold
+in their head beat thirty precise ones. Leaving a technology ungrouped is a
+valid outcome, and better than inventing an umbrella to hold it.
 
 ### People and peer references
 

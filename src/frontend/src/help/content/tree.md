@@ -72,6 +72,11 @@ Nodes are ordinary controls, so **Tab** reaches them, **Enter** opens the one
 you are on, and **Alt-Enter** (**⌥-Enter** on a Mac) focuses on it. With
 **Focus on a node…** armed, plain **Enter** focuses too.
 
+A technology has **exactly one** parent here, so the tree never draws the same
+dot twice. Where a technology genuinely touches a second family, that is
+recorded as a **relation** instead and shows up under **Dependencies** — see
+**Manage ▸ Groups** for when to use which.
+
 ## Dependencies — "influences"
 
 The relation graph: `drives`, `hinders` and `relates to`. Pick an **anchor**
