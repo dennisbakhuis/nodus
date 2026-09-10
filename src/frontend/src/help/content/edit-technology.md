@@ -13,6 +13,35 @@ panel.
 - **Aliases** — other names or acronyms. They feed search and stop the same
   technology being added twice.
 
+### Naming convention
+
+A registry is only searchable if its names are predictable. Nodus does not
+enforce these, but a catalogue that ignores them accumulates duplicates that are
+invisible until someone reads the whole list.
+
+- **One language.** Pick one and stay in it — a catalogue with _Quantum
+  Technologies_ and _Quantum technologie_ has two entries for one thing.
+- **Title Case**, and one spelling system throughout. Do not let
+  _Optimisation_ and _Optimization_ both exist.
+- **A noun phrase for the thing itself**, not for the benefit or the project.
+  _Dynamic Line Rating_, not _Getting More From Existing Lines_.
+- **Acronym or expansion, never both.** _HVDC_ or _High Voltage Direct
+  Current_ — pick one for the name and put the other in **Aliases**, which is
+  what stops the duplicate.
+- **Spell "and", and treat it as a warning.** A conjunction in a name usually
+  means two technologies wearing one entry — _Federated Learning and Data
+  Fusion_ is really _Federated Learning_.
+- **Singular**, unless the thing is only ever plural (_Data Spaces_).
+- **No vendor or product names.** _Low-Code Platforms_, not _Mendix_. A named
+  product belongs in **Key players** on the factsheet.
+- **Never let _Advanced_, _Smart_, _Innovative_, _Emerging_, _New_ or
+  _Next-Generation_ be the word that distinguishes an entry.** If removing it
+  collides with another entry, you have found a duplicate, not a new
+  technology.
+
+The last two are where most duplicates come from. Before adding anything, read
+the duplicate warning Nodus shows as you type — it is matching aliases too.
+
 ## Placement
 
 - **Ring** — Invest / Pilot / Explore / Monitor. Picking a ring places the
@@ -55,18 +84,35 @@ and pick their role on this technology.
 
 Files this technology into a **group hierarchy** (a family such as *Generative
 AI ▸ Agentic AI*). This is a taxonomy for finding and filtering — it never moves
-the dot. The parent picker is split into **Groups** (pure labels), **Technology
+the dot. A technology has **exactly one** parent; if it seems to need two, see
+**Relations** below. The parent picker is split into **Groups** (pure labels), **Technology
 groups** (technologies that already have children), and **Technologies**. Pick a
 parent, or **— None —** for top level; a node's own descendants are hidden so you
 can't create a loop. To restructure many at once, use **Manage ▸ Groups**.
 
 ## Relations
 
-Captures **influence** between technologies — a graph, not a hierarchy (use
-Groups for "is part of"). Choose a type — **Drives**, **Driven by**, **Relates
-to**, **Hinders**, **Hindered by** — type a target, and **Add**. Remove one with
-the **×**. Relations show on both technologies and feed the radar's connection
-lines.
+Captures **influence** between technologies — a graph, not a hierarchy. Choose a
+type — **Drives**, **Driven by**, **Relates to**, **Hinders**, **Hindered by** —
+type a target, and **Add**. Remove one with the **×**. Relations show on both
+technologies and feed the radar's connection lines.
+
+**Groups say what something _is_. Relations say what something _touches_.** If
+you are about to record that A is a kind of B, that is a group, not a relation.
+
+Because a technology has exactly one parent, a relation is also how you record a
+**second, secondary family**: file it under its primary group, then add a
+`Relates to` pointing at the other group — a relation may target a group node,
+not just a technology. Use it when the membership is real but not what the thing
+_is_; if you need it often, the taxonomy needs fixing instead.
+
+Two habits worth keeping:
+
+- **Prefer a typed relation to `Relates to`.** _Drives_ and _Hinders_ carry
+  direction and meaning; `Relates to` is a catch-all and a registry full of it
+  tells a reader nothing. Add the reciprocal so the graph reads both ways.
+- **A relation should teach someone something.** "Both are digital" is not a
+  relation. If you cannot say what a reader learns from the link, leave it out.
 
 ## Peer references
 

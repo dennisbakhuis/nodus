@@ -15,6 +15,42 @@ rest**, like the search box.
   dot **and** a parent; a technology becomes one the moment something is filed
   under it (marked _● on radar_ in the table).
 
+## One parent, always
+
+A technology sits in **exactly one** group. The hierarchy is a strict tree, not
+a set of overlapping tags — every node has a single parent, and re-parenting a
+node moves it rather than adding it somewhere else.
+
+This is deliberate. A group answers **"what kind of thing is this?"**, and a
+thing is one kind of thing. It is also what the radar assumes: a dot occupies
+one wedge, so a technology filed in two families would have to be drawn twice or
+placed arbitrarily.
+
+### When something seems to belong in two families
+
+It usually means one of three things, and only the last needs a relation:
+
+1. **The two groups are the same idea under different names.** Merge them. Two
+   umbrellas that keep competing for the same children are one umbrella.
+2. **One of the groups is really a theme, not a family.** "Everything we do for
+   the offshore programme" is not a kind of technology. Use a **segment** or a
+   **strategic innovation field** for that; both cut across the tree by design.
+3. **The membership is genuine but secondary.** File it under its primary
+   family, then add a **relation** to the other one.
+
+That third case is what relations are for:
+
+> **Groups say what something _is_. Relations say what something _touches_.**
+
+_Power-to-X-to-Power_ is structurally a Power-to-X variant, so that is its
+parent — but it behaves like storage, so it carries a `relates to` link to the
+_Energy Storage_ group. A reader browsing storage still finds it; the tree stays
+unambiguous. A relation may point at a group node as well as at a technology,
+so a whole family is a valid target.
+
+Reach for this sparingly. If more than a handful of technologies need one, the
+taxonomy is wrong — go back to points 1 and 2.
+
 ## Building the hierarchy
 
 - **Add a group** — give it a name and, optionally, a parent. Leave the parent on
@@ -56,6 +92,20 @@ a technology group shows it above its factsheet.
 Deleting a group **re-parents its children up one level** — nothing is orphaned.
 Only label groups can be deleted here; a group that is also **on the radar** must
 be archived from its technology card instead.
+
+## Keeping the set small
+
+Groups are navigation, and navigation stops working when there is too much of
+it. A few rules that hold up in practice:
+
+- **A group needs at least two children**, and ideally three. A family of one is
+  just a technology with an extra click in front of it.
+- **A group needs a boundary you can state in a sentence.** If **What belongs
+  here** is hard to write, the group is a mood, not a family.
+- **Prefer fewer, broader families.** Ten well-drawn groups beat thirty precise
+  ones, because a reader can hold ten in their head.
+- **Not everything needs a parent.** Leaving a technology ungrouped is a valid
+  outcome, and better than inventing an umbrella to hold it.
 
 > The radar sidebar's **Group** filter is where readers browse this hierarchy,
 > and the **Tree** view draws it in full. How deep it may nest is set under
