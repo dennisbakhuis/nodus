@@ -2,7 +2,7 @@
   "name": "nodus-frontend",
   "description": "Nodus Technology Radar frontend (React + Vite + TypeScript)",
   "private": true,
-  "version": "0.8.5",
+  "version": "0.8.6",
   "type": "module",
   "license": "Apache-2.0",
   "author": "Dennis Bakhuis",
