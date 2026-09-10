@@ -683,10 +683,13 @@ def update_technology_header(
     if payload.hero_image_id is not None:
         tech.hero_image_id = payload.hero_image_id
 
+    # Only an On Radar entry holds a wheel position, so leaving that status
+    # clears ring and segment. The table CHECK enforces this, so a status change
+    # that skipped it would fail at flush time rather than here.
     if (
         payload.registry_status is not None
         and str(payload.registry_status) != old_status
-        and str(payload.registry_status) == str(RegistryStatus.Archive)
+        and str(payload.registry_status) != str(RegistryStatus.OnRadar)
     ):
         tech.current_ring = None
         tech.current_segment_id = None
@@ -701,7 +704,8 @@ def update_technology_header(
         if new_status == str(RegistryStatus.OnRadar):
             event_type = (
                 EventType.Reactivated
-                if old_status == str(RegistryStatus.Archive)
+                if old_status
+                in (str(RegistryStatus.Archive), str(RegistryStatus.Adopted))
                 else EventType.Added
             )
         else:

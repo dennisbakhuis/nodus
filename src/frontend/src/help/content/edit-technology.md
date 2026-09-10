@@ -47,9 +47,16 @@ the duplicate warning Nodus shows as you type — it is matching aliases too.
 - **Ring** — Invest / Pilot / Explore / Monitor. Picking a ring places the
   technology **On Radar**.
 - **Segment** — the business area; exactly one.
-- **Registry status** — **On Radar**, **Backlog**, or **Archive**. Switching to
-  a status that needs a radar position opens a short dialog for the ring,
-  segment, and a reason.
+- **Registry status** — **On Radar**, **Backlog**, **Adopted**, or **Archive**.
+  Switching to a status that needs a radar position opens a short dialog for the
+  ring, segment, and a reason. Leaving **On Radar** clears the ring and segment,
+  because only a radar entry holds a position on the wheel.
+
+  **Adopted** and **Archive** are both terminal and mean opposite things. Use
+  **Adopted** when the technology is in normal use and no decision about it
+  remains — the successful exit. Use **Archive** when it was dropped or has
+  faded. Keeping them apart is what lets the radar show what it delivered rather
+  than only what it abandoned.
 - **Visibility** — **Public** is visible to public readers; **Private** keeps it
   internal.
 

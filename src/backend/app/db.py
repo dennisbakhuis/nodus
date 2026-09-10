@@ -167,15 +167,69 @@ def _maybe_rebuild_user_table(engine_to_use: object) -> bool:
     return True
 
 
+def _maybe_rebuild_technology_table(engine_to_use: object) -> bool:
+    """Recreate `technology` when its CHECK constraint predates the Adopted status.
+
+    SQLite writes the enum CHECK inline and cannot alter it, so adding a fourth
+    registry status means rebuilding the table with its rows preserved. Mirrors
+    ``_maybe_rebuild_user_table``. Returns True if the table was rebuilt.
+    """
+    with Session(engine_to_use) as session:  # type: ignore[arg-type]
+        row = session.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='table' AND name='technology'")
+        ).first()
+        if not row or row[0] is None:
+            return False
+        ddl: str = row[0]
+        if "CHECK" not in ddl.upper() or "Adopted" in ddl:
+            return False
+
+        existing_rows = session.execute(text("SELECT * FROM technology")).mappings().fetchall()
+        session.execute(text("DROP TABLE technology"))
+        session.commit()
+
+    technology_table = SQLModel.metadata.tables.get("technology")
+    if technology_table is None:
+        return False
+    technology_table.create(bind=engine_to_use)  # type: ignore[arg-type]
+
+    if existing_rows:
+        # A live database can carry columns the model no longer declares —
+        # `movement` is one, added by an earlier migration and since dropped from
+        # Technology. Copying them into the fresh table fails, so keep only what
+        # the model knows and say which columns were left behind.
+        known = set(technology_table.columns.keys())
+        dropped = sorted(set(existing_rows[0].keys()) - known)
+        if dropped:
+            _log.warning(
+                "Rebuilding technology: dropping column(s) not present in the model: %s",
+                ", ".join(dropped),
+            )
+        with Session(engine_to_use) as session:  # type: ignore[arg-type]
+            for r in existing_rows:
+                payload = {k: v for k, v in dict(r).items() if k in known}
+                cols = ", ".join(payload.keys())
+                placeholders = ", ".join(f":{k}" for k in payload)
+                session.execute(
+                    text(f"INSERT INTO technology ({cols}) VALUES ({placeholders})"),
+                    payload,
+                )
+            session.commit()
+    return True
+
+
 def _apply_post_create_migrations(engine_to_use: object) -> None:
     """Hand-rolled idempotent column upgrades for tables that already exist.
 
     SQLModel.metadata.create_all leaves existing tables alone. When we add
-    columns to `User` we need a small ALTER step or live SQLite DBs miss them.
+    columns to `User` we need a small ALTER step or live SQLite DBs miss them,
+    and when an enum gains a value the table has to be rebuilt because SQLite
+    cannot alter an inline CHECK.
     """
+    technology_rebuilt = _maybe_rebuild_technology_table(engine_to_use)
     rebuilt = _maybe_rebuild_user_table(engine_to_use)
-    if rebuilt:
-        # Fresh table already has all columns — skip the per-column migration.
+    if rebuilt and technology_rebuilt:
+        # Both tables are fresh — no per-column migration left to do.
         return
     with Session(engine_to_use) as session:  # type: ignore[arg-type]
         rows = session.execute(
@@ -194,7 +248,7 @@ def _apply_post_create_migrations(engine_to_use: object) -> None:
         tech_rows = session.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='technology'")
         ).fetchall()
-        if tech_rows:
+        if tech_rows and not technology_rebuilt:
             _ensure_column(session, "technology", "movement", "movement VARCHAR")
             _ensure_column(session, "technology", "created_by_id", "created_by_id VARCHAR")
 

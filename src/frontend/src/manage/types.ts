@@ -159,6 +159,7 @@ export type DeliverableType =
 export const REGISTRY_STATUS_DISPLAY: Record<RegistryStatus, string> = {
   "On Radar": "On Radar",
   Backlog: "Backlog",
+  Adopted: "Adopted",
   Archive: "Archive",
 };
 
@@ -167,6 +168,7 @@ export const RING_VALUES: Ring[] = ["Invest", "Pilot", "Explore", "Monitor"];
 export const REGISTRY_STATUSES: RegistryStatus[] = [
   "On Radar",
   "Backlog",
+  "Adopted",
   "Archive",
 ];
 
@@ -211,6 +213,27 @@ export const VALID_TRANSITIONS: StatusTransition[] = [
   },
   {
     from: "On Radar",
+    to: "Adopted",
+    label: "Mark as adopted",
+    requiresRing: false,
+    requiresRationale: true,
+  },
+  {
+    from: "On Radar",
+    to: "Archive",
+    label: "Archive",
+    requiresRing: false,
+    requiresRationale: true,
+  },
+  {
+    from: "Adopted",
+    to: "On Radar",
+    label: "Return to Radar",
+    requiresRing: true,
+    requiresRationale: true,
+  },
+  {
+    from: "Adopted",
     to: "Archive",
     label: "Archive",
     requiresRing: false,

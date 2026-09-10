@@ -103,7 +103,12 @@ const RING_BADGE_COLORS: Record<string, string> = {
 };
 
 const RING_OPTIONS: Ring[] = ["Invest", "Pilot", "Explore", "Monitor"];
-const REGISTRY_OPTIONS: RegistryStatus[] = ["On Radar", "Backlog", "Archive"];
+const REGISTRY_OPTIONS: RegistryStatus[] = [
+  "On Radar",
+  "Backlog",
+  "Adopted",
+  "Archive",
+];
 
 function normaliseAlias(s: string): string {
   // Strip everything non-alphanumeric for matching, so "OpenAI.", "Open AI",

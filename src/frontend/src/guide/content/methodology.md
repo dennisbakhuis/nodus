@@ -67,12 +67,29 @@ Each entry has a lifecycle status:
 
 - **Backlog** — captured and tracked, not yet placed on the radar.
 - **On Radar** — actively shown as a dot, with a ring and a segment.
-- **Archive** — retired from the current radar but kept for history.
+- **Adopted** — taken into normal use; no decision about it remains.
+- **Archive** — dropped, superseded, or no longer relevant.
 
 ![Backlog, then On Radar, then Archive](figure:lifecycle)
 
 Keeping archived and backlog items means you can answer "what did we think last
 year?" and "what did we choose not to pursue?".
+
+**Adopted and Archive are both terminal, and they mean opposite things.** A
+technology is Adopted when the organisation took it into normal use and there is
+no longer a decision to make about it — it succeeded, and it leaves the radar
+because a radar shows open questions, not settled ones. It is Archived when it
+was dropped, superseded or faded. Recording both as "Archive" would throw away
+the record of what the radar actually delivered, which is the evidence that
+scouting works.
+
+A technology leaving the radar does not leave the registry: its factsheet,
+initiatives and people stay, so "who runs this?" still has an answer long after
+the decision is closed.
+
+> **A rule of thumb for Adopted** — if no reader would ever act differently
+> because of its ring, it does not belong on the radar. A discipline that will
+> always be funded is a budget statement, not a radar entry.
 
 > **In Nodus** — the registry is the **List** view. Filter by **Registry Status**
 > to see Backlog intake, the live radar, or the archive. Archiving never deletes.
@@ -349,9 +366,11 @@ possible duplicates as you type, so the same technology isn't added twice.
 
 ### The lifecycle
 
-A technology moves through **Backlog → On Radar → Archive**. Archiving retires a
-dot from the current radar without deleting it, so its history stays in the
-registry.
+A technology moves through **Backlog → On Radar → Adopted**, or out to
+**Archive** at any point. Adopted is the successful exit — it is in normal use
+and no decision remains. Archive is the unsuccessful one. Both retire the dot
+without deleting anything, so the history stays in the registry, and both can be
+returned to the radar if the picture changes.
 
 ### Editing a technology
 

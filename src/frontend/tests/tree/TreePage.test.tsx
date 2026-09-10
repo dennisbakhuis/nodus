@@ -99,6 +99,7 @@ describe("TreePage", () => {
     expect(fetchCurrentRadar.mock.calls[0]![2]).toEqual([
       "On Radar",
       "Backlog",
+      "Adopted",
       "Archive",
     ]);
   });
