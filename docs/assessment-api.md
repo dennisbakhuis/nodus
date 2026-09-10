@@ -140,6 +140,22 @@ Auth: Writer or higher
 **Behavior:**
 
 - The `On Radar` status requires both `current_ring` and `current_segment_id`. Non-`On Radar` statuses require both to be null. The database enforces this via a CHECK constraint.
+
+### Permanent deletion
+
+`DELETE /api/technologies/{tech_id}` removes a Technology and everything it owns:
+its factsheet stream and each factsheet's assessment, its movement events, its
+initiatives, and every relation touching the Topic. Add `?delete_topic_too=true`
+to remove the Topic as well, with its aliases, person links and peer references;
+group children are lifted to the Topic's own parent so no subtree is orphaned.
+
+Admin only, and it refuses anything still `On Radar` with a 409 — archive it
+first. Archiving remains the normal way to retire a technology, because the
+registry is institutional memory and a declined entry answers "what did we choose
+not to pursue?". Deletion is for rows that were never a decision: entries an
+importer created from another organisation's index or from a scraped page, which
+only pollute search and duplicate detection.
+
 - Leaving `On Radar` for any status automatically clears `current_ring` and `current_segment_id`, so neither `Adopted` nor `Archive` can be plotted.
 - A status transition emits a MovementEvent of type `Added` (Backlog → On Radar), `Reactivated` (Archive or Adopted → On Radar), or `StatusChanged` (other transitions).
 - A ring change on an `On Radar` technology emits a `RingChanged` MovementEvent.
