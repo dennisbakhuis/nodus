@@ -142,28 +142,40 @@ def _maybe_rebuild_user_table(engine_to_use: object) -> bool:
         if "CHECK" not in ddl.upper() or "public_reader" in ddl:
             return False
 
-        existing_rows = session.execute(text("SELECT * FROM user")).mappings().fetchall()
-        session.execute(text("DROP TABLE user"))
-        session.commit()
-
     user_table = SQLModel.metadata.tables.get("user")
     if user_table is None:
         return False
-    user_table.create(bind=engine_to_use)  # type: ignore[arg-type]
 
-    if existing_rows:
+    # `person`, `api_key`, `auth_session`, `technology.created_by_id` and
+    # `factsheet.author_id` all reference `user.id`, so the DROP fails while FK
+    # enforcement is on. Same reasoning as _maybe_rebuild_technology_table.
+    set_sqlite_fk_enforcement(False)
+    engine_to_use.dispose()  # type: ignore[attr-defined]
+    try:
         with Session(engine_to_use) as session:  # type: ignore[arg-type]
-            for r in existing_rows:
-                payload = dict(r)
-                payload.setdefault("mfa_enabled", False)
-                payload.setdefault("totp_secret", None)
-                cols = ", ".join(payload.keys())
-                placeholders = ", ".join(f":{k}" for k in payload)
-                session.execute(
-                    text(f"INSERT INTO user ({cols}) VALUES ({placeholders})"),
-                    payload,
-                )
+            existing_rows = session.execute(text("SELECT * FROM user")).mappings().fetchall()
+            session.execute(text("DROP TABLE user"))
             session.commit()
+
+        user_table.create(bind=engine_to_use)  # type: ignore[arg-type]
+
+        if existing_rows:
+            known = set(user_table.columns.keys())
+            with Session(engine_to_use) as session:  # type: ignore[arg-type]
+                for r in existing_rows:
+                    payload = {k: v for k, v in dict(r).items() if k in known}
+                    payload.setdefault("mfa_enabled", False)
+                    payload.setdefault("totp_secret", None)
+                    cols = ", ".join(payload.keys())
+                    placeholders = ", ".join(f":{k}" for k in payload)
+                    session.execute(
+                        text(f"INSERT INTO user ({cols}) VALUES ({placeholders})"),
+                        payload,
+                    )
+                session.commit()
+    finally:
+        set_sqlite_fk_enforcement(True)
+        engine_to_use.dispose()  # type: ignore[attr-defined]
     return True
 
 
@@ -173,6 +185,14 @@ def _maybe_rebuild_technology_table(engine_to_use: object) -> bool:
     SQLite writes the enum CHECK inline and cannot alter it, so adding a fourth
     registry status means rebuilding the table with its rows preserved. Mirrors
     ``_maybe_rebuild_user_table``. Returns True if the table was rebuilt.
+
+    `factsheet`, `initiative` and `movement_event` all reference `technology.id`,
+    so with `PRAGMA foreign_keys=ON` the DROP fails outright on any populated
+    database. Enforcement is therefore relaxed for the rebuild and restored
+    immediately afterwards, which is the procedure SQLite documents for altering
+    a table in place. The pool is disposed on both sides of the toggle because
+    the pragma is set per connection, so pooled connections would otherwise keep
+    the old setting.
     """
     with Session(engine_to_use) as session:  # type: ignore[arg-type]
         row = session.execute(
@@ -184,38 +204,63 @@ def _maybe_rebuild_technology_table(engine_to_use: object) -> bool:
         if "CHECK" not in ddl.upper() or "Adopted" in ddl:
             return False
 
-        existing_rows = session.execute(text("SELECT * FROM technology")).mappings().fetchall()
-        session.execute(text("DROP TABLE technology"))
-        session.commit()
-
     technology_table = SQLModel.metadata.tables.get("technology")
     if technology_table is None:
         return False
-    technology_table.create(bind=engine_to_use)  # type: ignore[arg-type]
 
-    if existing_rows:
-        # A live database can carry columns the model no longer declares —
-        # `movement` is one, added by an earlier migration and since dropped from
-        # Technology. Copying them into the fresh table fails, so keep only what
-        # the model knows and say which columns were left behind.
-        known = set(technology_table.columns.keys())
-        dropped = sorted(set(existing_rows[0].keys()) - known)
-        if dropped:
-            _log.warning(
-                "Rebuilding technology: dropping column(s) not present in the model: %s",
-                ", ".join(dropped),
-            )
+    set_sqlite_fk_enforcement(False)
+    engine_to_use.dispose()  # type: ignore[attr-defined]
+    try:
         with Session(engine_to_use) as session:  # type: ignore[arg-type]
-            for r in existing_rows:
-                payload = {k: v for k, v in dict(r).items() if k in known}
-                cols = ", ".join(payload.keys())
-                placeholders = ", ".join(f":{k}" for k in payload)
-                session.execute(
-                    text(f"INSERT INTO technology ({cols}) VALUES ({placeholders})"),
-                    payload,
-                )
+            existing_rows = session.execute(text("SELECT * FROM technology")).mappings().fetchall()
+            session.execute(text("DROP TABLE technology"))
             session.commit()
+
+        technology_table.create(bind=engine_to_use)  # type: ignore[arg-type]
+        _restore_technology_rows(engine_to_use, technology_table, existing_rows)
+    finally:
+        set_sqlite_fk_enforcement(True)
+        engine_to_use.dispose()  # type: ignore[attr-defined]
+
+    with Session(engine_to_use) as session:  # type: ignore[arg-type]
+        violations = session.execute(text("PRAGMA foreign_key_check")).fetchall()
+    if violations:
+        _log.error(
+            "Rebuilding technology left %d foreign-key violation(s); the first is %s",
+            len(violations),
+            violations[0],
+        )
     return True
+
+
+def _restore_technology_rows(
+    engine_to_use: object, technology_table: object, existing_rows: list
+) -> None:
+    """Re-insert the rows saved before the drop, keeping only known columns."""
+
+    if not existing_rows:
+        return
+    # A live database can carry columns the model no longer declares —
+    # `movement` is one, added by an earlier migration and since dropped from
+    # Technology. Copying them into the fresh table fails, so keep only what
+    # the model knows and say which columns were left behind.
+    known = set(technology_table.columns.keys())  # type: ignore[attr-defined]
+    dropped = sorted(set(existing_rows[0].keys()) - known)
+    if dropped:
+        _log.warning(
+            "Rebuilding technology: dropping column(s) not present in the model: %s",
+            ", ".join(dropped),
+        )
+    with Session(engine_to_use) as session:  # type: ignore[arg-type]
+        for r in existing_rows:
+            payload = {k: v for k, v in dict(r).items() if k in known}
+            cols = ", ".join(payload.keys())
+            placeholders = ", ".join(f":{k}" for k in payload)
+            session.execute(
+                text(f"INSERT INTO technology ({cols}) VALUES ({placeholders})"),
+                payload,
+            )
+        session.commit()
 
 
 def _apply_post_create_migrations(engine_to_use: object) -> None:
