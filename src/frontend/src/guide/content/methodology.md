@@ -77,30 +77,6 @@ year?" and "what did we choose not to pursue?".
 > **In Nodus** — the registry is the **List** view. Filter by **Registry Status**
 > to see Backlog intake, the live radar, or the archive. Archiving never deletes.
 
-### Naming technologies
-
-A registry is only searchable if its names are predictable, and duplicates that
-differ only in wording are invisible until someone reads the whole list. Agree a
-convention and hold to it:
-
-- **One language**, one spelling system, **Title Case**. _Quantum Technologies_
-  and _Quantum technologie_ are two entries for one thing.
-- **A noun phrase for the thing itself**, not the benefit or the project.
-- **Acronym or expansion, never both** — put the other form in **Aliases**,
-  which is what stops the duplicate being created.
-- **Spell "and", and treat it as a warning.** A conjunction usually means two
-  technologies wearing one entry: _Federated Learning and Data Fusion_ is really
-  _Federated Learning_.
-- **Singular**, unless the thing is only ever plural.
-- **No vendor or product names** — those belong in **Key players**.
-- **Never let _Advanced_, _Smart_, _Innovative_, _Emerging_, _New_ or
-  _Next-Generation_ be the distinguishing word.** If removing it collides with
-  an existing entry, you have found a duplicate, not a new technology.
-
-The last two cause most of the duplication in practice. Aliases are the tool
-that makes the rest safe: one canonical name, every other form recorded against
-it, so search and the duplicate warning both find it.
-
 ### Assessing a technology
 
 Assessment turns opinion into a comparable judgement by scoring each technology
@@ -336,6 +312,30 @@ is reachable from the keyboard too — **Tab** to a node, **Enter** to open it,
 > match so nothing is orphaned from its family. In **Dependencies** it narrows
 > what the lineage may pass through, because a filtered-out technology's
 > dependencies are not the anchor's dependencies.
+
+## Naming technologies
+
+A registry is only searchable if its names are predictable, and duplicates that
+differ only in wording are invisible until someone reads the whole list. Agree a
+convention and hold to it:
+
+- **One language**, one spelling system, **Title Case**. _Quantum Technologies_
+  and _Quantum technologie_ are two entries for one thing.
+- **A noun phrase for the thing itself**, not the benefit or the project.
+- **Acronym or expansion, never both** — put the other form in **Aliases**,
+  which is what stops the duplicate being created.
+- **Spell "and", and treat it as a warning.** A conjunction usually means two
+  technologies wearing one entry: _Federated Learning and Data Fusion_ is really
+  _Federated Learning_.
+- **Singular**, unless the thing is only ever plural.
+- **No vendor or product names** — those belong in **Key players**.
+- **Never let _Advanced_, _Smart_, _Innovative_, _Emerging_, _New_ or
+  _Next-Generation_ be the distinguishing word.** If removing it collides with
+  an existing entry, you have found a duplicate, not a new technology.
+
+The last two cause most of the duplication in practice. Aliases are the tool
+that makes the rest safe: one canonical name, every other form recorded against
+it, so search and the duplicate warning both find it.
 
 ## Curating technologies
 

@@ -1051,6 +1051,7 @@ export function TopicDetailModal({
                 value={titleEdit}
                 onChange={(e) => setTitleEdit(e.target.value)}
                 aria-label="Topic title"
+                title="One language, Title Case, singular. Use the acronym or the expansion, not both — put the other in Aliases. No vendor names, and avoid Advanced/Smart/New as the distinguishing word."
                 style={{
                   margin: 0,
                   marginBottom: "var(--space-2)",

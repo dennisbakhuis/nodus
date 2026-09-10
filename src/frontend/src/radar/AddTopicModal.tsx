@@ -144,7 +144,11 @@ export function AddTopicModal({
             gap: "var(--space-4)",
           }}
         >
-          <Field label="Name" required>
+          <Field
+            label="Name"
+            required
+            helper="One language, Title Case, singular. Use the acronym or the expansion, not both — put the other in Aliases. No vendor names, and avoid Advanced/Smart/New as the distinguishing word."
+          >
             {({ id, describedBy, invalid, required }) => (
               <input
                 id={id}
