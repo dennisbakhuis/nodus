@@ -98,6 +98,55 @@ def test_rebuild_preserves_rows_and_allows_adopted(tmp_path: Path) -> None:
     engine.dispose()
 
 
+def test_rebuild_succeeds_with_inbound_foreign_keys(tmp_path: Path) -> None:
+    """The case that broke production: rows in other tables point at technology.
+
+    `factsheet`, `initiative` and `movement_event` all reference `technology.id`.
+    With `PRAGMA foreign_keys=ON` — which every application connection sets — the
+    DROP fails on any database that has ever had a factsheet written, which is
+    every real one. The first version of this migration had no such row in its
+    fixture and passed while failing on startup in production.
+    """
+    engine = _legacy_engine(tmp_path)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO factsheet (id, technology_id, version, summary, description, "
+                "key_players, tax_credit_candidate, recommended_next_steps, "
+                "current_challenges, publication_links, last_updated, created_at) "
+                "VALUES ('f-1', 't-1', 1, 's', 'd', '', 'No', '', '', '[]', "
+                "'2026-01-01', '2026-01-01 00:00:00')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO movement_event (id, technology_id, event_type, rationale, timestamp) "
+                "VALUES ('m-1', 't-1', 'Added', 'why', '2026-01-01 00:00:00')"
+            )
+        )
+
+    assert _maybe_rebuild_technology_table(engine) is True
+
+    with Session(engine) as session:
+        assert session.execute(text("SELECT COUNT(*) FROM technology")).scalar_one() == 1
+        assert session.execute(text("SELECT COUNT(*) FROM factsheet")).scalar_one() == 1
+        assert session.execute(text("SELECT COUNT(*) FROM movement_event")).scalar_one() == 1
+        assert session.execute(text("PRAGMA foreign_key_check")).fetchall() == []
+    engine.dispose()
+
+
+def test_fk_enforcement_is_restored_after_the_rebuild(tmp_path: Path) -> None:
+    """Enforcement must come back on, or the app runs without referential integrity."""
+    from app.db import _FK_ENFORCEMENT_ENABLED  # noqa: F401
+
+    engine = _legacy_engine(tmp_path)
+    _maybe_rebuild_technology_table(engine)
+    import app.db as db_module
+
+    assert db_module._FK_ENFORCEMENT_ENABLED is True
+    engine.dispose()
+
+
 def test_rebuild_is_idempotent(tmp_path: Path) -> None:
     """A second pass is a no-op once the constraint already knows Adopted."""
     engine = _legacy_engine(tmp_path)
