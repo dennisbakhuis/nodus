@@ -10,10 +10,18 @@ from sqlmodel import Column, Field, SQLModel
 
 
 class RegistryStatus(enum.StrEnum):
-    """Registry status values — exact methodology wording (§4.5)."""
+    """Registry status values — exact methodology wording (§4.5).
+
+    ``Adopted`` and ``Archive`` are both terminal, and they mean opposite
+    things: a technology is Adopted when it has been taken into normal use and
+    no decision about it remains, and Archived when it was dropped or faded.
+    Collapsing the two would lose the record of what the radar actually
+    delivered, so they are separate values.
+    """
 
     OnRadar = "On Radar"
     Backlog = "Backlog"
+    Adopted = "Adopted"
     Archive = "Archive"
 
 
@@ -30,6 +38,8 @@ class Technology(SQLModel, table=True):
     """the radar's registry entry for a Topic.
 
     Owns the radar's ring, segment, registry status, factsheet stream, and movement audit log.
+    Only an On Radar entry carries a ring and a segment; every other status, Adopted included,
+    has neither, because it holds no position on the wheel.
     Exactly one Technology per Topic (or none if Topic has only peer references).
 
     current_factsheet_id carries a circular FK to factsheet.id. In SQLite FK enforcement
@@ -56,6 +66,7 @@ class Technology(SQLModel, table=True):
             SAEnum(
                 "On Radar",
                 "Backlog",
+                "Adopted",
                 "Archive",
                 name="registrystatus",
                 create_constraint=True,

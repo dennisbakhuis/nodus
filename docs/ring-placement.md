@@ -65,21 +65,24 @@ A technology that peer organisations have piloted successfully but that has inte
 A funded programme or active partner pull can pull a technology one ring inward — but only because the programme effectively raises feasibility and provides a pilot vehicle. Score it that way: update Feasibility and revisit the ring.
 
 **Late-stage technology that has become mainstream.**
-When a technology reaches `TRL 10+` and is the standard choice in its category, it should move off the radar (Archive). The radar is for technologies that warrant deliberate scouting attention; mainstream tech doesn't.
+When a technology sits at `TRL 9` and is the standard choice in its category, it should move off the radar. Use `Adopted` if the organisation actually took it into normal use, and `Archive` if it became mainstream elsewhere without being adopted here. The radar is for technologies that warrant deliberate scouting attention; mainstream tech doesn't.
+
+`TRL 9` is the top of the scale — it runs 1–9, per RVO and the EU framework. TRL alone does not trigger the exit: a technology can sit at 9 for years and still be an open decision. **The test is whether a decision remains, not how mature the technology is.** `Invest` means *actively funding deployment*, which is a decision still being made. A technology that is simply what the organisation uses, where no reader would ever act differently for its ring, is `Adopted`, not `Invest`.
 
 ---
 
 ## Registry status and ring placement
 
-The Technology has a `registry_status` field with three values:
+The Technology has a `registry_status` field with four values:
 
 | Status | Ring required? | Visible on radar? | Use |
 |--------|----------------|-------------------|-----|
 | `On Radar` | Yes (ring + segment) | Yes | Active radar entries |
 | `Backlog` | No | No | Nominated, not yet assessed; or assessed but below radar threshold |
-| `Archive` | No | No | Removed from radar; history preserved |
+| `Adopted` | No | No | Taken into normal use; no decision remains. History preserved |
+| `Archive` | No | No | Dropped or superseded; history preserved |
 
-The database enforces the relationship: `On Radar` requires both `current_ring` and `current_segment_id`; non-`On Radar` statuses require both to be null. Moving to `Archive` automatically clears the ring and segment.
+The database enforces the relationship: `On Radar` requires both `current_ring` and `current_segment_id`; every other status requires both to be null. Leaving `On Radar` for any status — `Adopted` and `Archive` alike — automatically clears the ring and segment, which is why neither can appear on the radar.
 
 Three common transitions:
 

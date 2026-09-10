@@ -1,6 +1,6 @@
 import { type CSSProperties } from "react";
 
-type RegistryStatus = "OnRadar" | "Backlog" | "Archive";
+type RegistryStatus = "OnRadar" | "Backlog" | "Adopted" | "Archive";
 
 type Props = {
   status: RegistryStatus | string;
@@ -26,6 +26,12 @@ function statusStyle(status: string): StyleDef {
         backgroundColor: "var(--color-hover-bg)",
         color: "var(--color-muted-text)",
         label: "Backlog",
+      };
+    case "Adopted":
+      return {
+        backgroundColor: "var(--color-brand-green, #2e7d32)",
+        color: "var(--color-white)",
+        label: "Adopted",
       };
     case "Archive":
       return {

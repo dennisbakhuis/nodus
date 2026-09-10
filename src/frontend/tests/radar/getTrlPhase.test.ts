@@ -38,15 +38,11 @@ describe("getTrlPhase", () => {
     expect(getTrlPhase(9)).toBe("Deployment");
   });
 
-  it("returns Scale for 10", () => {
-    expect(getTrlPhase(10)).toBe("Scale");
-  });
-
-  it("returns Scale for 12", () => {
-    expect(getTrlPhase(12)).toBe("Scale");
-  });
-
-  it("returns Invalid for 13", () => {
+  it("returns Invalid above the scale", () => {
+    // The scale is 1-9. A row above it can only come from an old import, and
+    // showing it as a phase would imply it is a legitimate reading.
+    expect(getTrlPhase(10)).toBe("Invalid");
+    expect(getTrlPhase(12)).toBe("Invalid");
     expect(getTrlPhase(13)).toBe("Invalid");
   });
 

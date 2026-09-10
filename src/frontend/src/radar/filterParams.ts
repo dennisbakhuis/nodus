@@ -18,6 +18,7 @@ import type {
 export const ALL_REGISTRY_STATUSES: RegistryStatusName[] = [
   "On Radar",
   "Backlog",
+  "Adopted",
   "Archive",
 ];
 

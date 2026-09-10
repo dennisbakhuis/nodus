@@ -1679,7 +1679,7 @@ export type RadarSnapshotResponse = {
  *
  * Registry status values — exact methodology wording (§4.5).
  */
-export type RegistryStatus = 'On Radar' | 'Backlog' | 'Archive';
+export type RegistryStatus = 'On Radar' | 'Backlog' | 'Adopted' | 'Archive';
 
 /**
  * RelationCreate

@@ -131,7 +131,7 @@ Auth: Writer or higher
 
 | Field | Type | Allowed values |
 |-------|------|----------------|
-| `registry_status` | enum | `"On Radar"`, `"Backlog"`, `"Archive"` |
+| `registry_status` | enum | `"On Radar"`, `"Backlog"`, `"Adopted"`, `"Archive"` |
 | `current_ring` | enum | `"Invest"`, `"Pilot"`, `"Explore"`, `"Monitor"` |
 | `current_segment_id` | UUID | Existing segment id |
 | `hero_image_id` | UUID | Existing media asset id |
@@ -140,8 +140,8 @@ Auth: Writer or higher
 **Behavior:**
 
 - The `On Radar` status requires both `current_ring` and `current_segment_id`. Non-`On Radar` statuses require both to be null. The database enforces this via a CHECK constraint.
-- Moving to `Archive` automatically clears `current_ring` and `current_segment_id`.
-- A status transition emits a MovementEvent of type `Added` (Backlog → On Radar), `Reactivated` (Archive → On Radar), or `StatusChanged` (other transitions).
+- Leaving `On Radar` for any status automatically clears `current_ring` and `current_segment_id`, so neither `Adopted` nor `Archive` can be plotted.
+- A status transition emits a MovementEvent of type `Added` (Backlog → On Radar), `Reactivated` (Archive or Adopted → On Radar), or `StatusChanged` (other transitions).
 - A ring change on an `On Radar` technology emits a `RingChanged` MovementEvent.
 - The `rationale` field is included on the emitted event(s). Provide one — without it, the system generates a generic message that is less useful for the audit trail.
 
@@ -196,7 +196,7 @@ Returns the append-only MovementEvent log for the technology, ordered by timesta
 ## Validation errors to expect
 
 - **422** — Invalid enum value (e.g. `time_to_mainstream` not one of `"0-2 yr"`, `"2-5 yr"`, `"5-7 yr"`, `"7-10 yr"`). Watch the literal spelling, especially the space before `yr`.
-- **422** — `trl` outside 1–12 is rejected by the database CHECK constraint as a 500 from the API if not caught at validation. Use 1–9; 10–12 is tolerated only for legacy rows.
+- **422** — `trl` outside 1–9 is rejected by request validation. The scale is 1–9; there is no valid value above 9.
 - **404** — `tech_id` does not exist.
 - **401 / 403** — Caller is not a Writer (for `POST /technologies/{tech_id}/factsheet` and `PATCH /technologies/{tech_id}`).
 - **409 / DB integrity** — Setting `registry_status = "On Radar"` without both `current_ring` and `current_segment_id` violates the check constraint.

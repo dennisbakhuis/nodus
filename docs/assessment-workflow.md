@@ -101,7 +101,8 @@ At each cycle, every On-Radar technology should be revisited. The revisit usuall
 - **No change.** The factsheet is still accurate; no new version is needed. Note the review in the cycle log.
 - **New evidence, same ring.** Create a new factsheet version with the updated assessment and description. Ring unchanged.
 - **Promotion / demotion.** New evidence justifies moving the technology inward (Monitor → Explore → Pilot → Invest) or outward. Update `current_ring` on the Technology — this emits a `RingChanged` MovementEvent with the rationale.
-- **Removal.** Move `registry_status` to `Archive`. The ring and segment are automatically cleared. The technology and its full history remain queryable but stop appearing on the radar.
+- **Adoption.** Move `registry_status` to `Adopted` when the technology is in normal use and no decision about it remains. The ring and segment are automatically cleared, so it stops appearing on the radar while its factsheet, initiatives and people stay queryable — "who runs this?" still has an answer.
+- **Removal.** Move `registry_status` to `Archive` when the technology was dropped, superseded or has faded. Behaves exactly as `Adopted` does; the difference is what it records.
 
 Every status or ring change emits an append-only MovementEvent. Movement events drive the delta document at cycle close and the institutional memory across cycles. **Never edit a prior factsheet or assessment in place** — the immutable versioning is what makes the audit trail trustworthy.
 

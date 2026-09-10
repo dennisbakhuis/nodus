@@ -3,7 +3,6 @@ export type TrlPhase =
   | "Development"
   | "Demonstration"
   | "Deployment"
-  | "Scale"
   | "Invalid";
 
 export function getTrlPhase(trl: number | null | undefined): TrlPhase {
@@ -12,6 +11,5 @@ export function getTrlPhase(trl: number | null | undefined): TrlPhase {
   if (trl >= 4 && trl <= 6) return "Development";
   if (trl >= 7 && trl <= 8) return "Demonstration";
   if (trl === 9) return "Deployment";
-  if (trl >= 10 && trl <= 12) return "Scale";
   return "Invalid";
 }

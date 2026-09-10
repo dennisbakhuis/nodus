@@ -125,13 +125,14 @@ A "no" to either ends the conversation. A "yes" to both moves the technology int
 
 The registry is the single source of truth for the scouting practice. Every technology the organisation has ever assessed lives here, with its full history. The radar is one *view* of the registry; the registry itself is broader and longer-lived.
 
-Each technology in the registry has a factsheet (§9) and one of three statuses:
+Each technology in the registry has a factsheet (§9) and one of four statuses:
 
 | Status | Meaning | Visible on radar? |
 |--------|---------|-------------------|
 | **On Radar** | Actively positioned with a current recommendation | Yes |
 | **Backlog** | Nominated and recorded, but not yet assessed or not yet meeting the threshold for the radar | No |
-| **Archive** | Previously on the radar but removed, or assessed and declined. Retains full history. | No |
+| **Adopted** | Taken into normal use; no decision remains. The successful exit from the radar. Retains full history. | No |
+| **Archive** | Dropped, superseded, or assessed and declined. Retains full history. | No |
 
 ### Why a Registry Matters
 
@@ -142,7 +143,11 @@ Each technology in the registry has a factsheet (§9) and one of three statuses:
 
 ### Lifecycle
 
-A technology enters the registry as **Backlog** on nomination. After assessment it moves to **On Radar** (with a recommendation level) or **Archive** (declined with documented reasoning). Entries removed from the radar move to Archive, retaining their factsheet and history. Archived entries can be reactivated to Backlog or directly to On Radar when new evidence warrants.
+A technology enters the registry as **Backlog** on nomination. After assessment it moves to **On Radar** (with a recommendation level) or **Archive** (declined with documented reasoning).
+
+A technology leaves the radar in one of two ways, and the distinction matters. It becomes **Adopted** when it has been taken into normal use and no decision about it remains — the successful exit, and the record of what the radar delivered. It becomes **Archive** when it was dropped, superseded or faded. Both keep the factsheet and history; neither is visible on the radar, because leaving On Radar clears the ring and segment and the radar has nowhere to place it. Both can be reactivated to Backlog or directly to On Radar when new evidence warrants.
+
+Collapsing Adopted into Archive would mean the registry can say what scouting abandoned but not what it delivered, and the second is the more useful answer.
 
 This webapp implements the registry as a database: factsheets, assessments, movement history, and status changes are all queryable and version-tracked. Exports (radar visualisation, PDF, JSON, CSV) are generated from this single store.
 
@@ -365,11 +370,11 @@ Every entry in the registry — regardless of status — has a standardised fact
 
 **Technology Name:** [e.g., a specific named technology]
 
-**Registry Status:** [On Radar | Backlog | Archive]
+**Registry Status:** [On Radar | Backlog | Adopted | Archive]
 
 **Segment:** [your segment list]
 
-**Recommendation Level:** [Invest | Pilot | Explore | Monitor | N/A (if Backlog or Archive)]
+**Recommendation Level:** [Invest | Pilot | Explore | Monitor | N/A (if not On Radar)]
 
 **Last Movement:** [New | Promoted | Demoted | No Change | Removed | N/A] (with date)
 

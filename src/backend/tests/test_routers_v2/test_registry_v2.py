@@ -305,6 +305,66 @@ class TestTechnologyHeaderUpdate:
         assert resp.status_code == 200
         assert resp.json()["current_ring"] is None
 
+    def test_adopted_clears_ring_and_segment(self, client: TestClient) -> None:
+        data = self._create_with_tech(client, "Adopted Sensor Platform")
+        tech_id = data["technology"]["id"]
+        seg_id = self._first_segment_id(client)
+        client.patch(
+            f"/api/technologies/{tech_id}",
+            json={
+                "registry_status": "On Radar",
+                "current_ring": "Invest",
+                "current_segment_id": seg_id,
+                "rationale": "Scaling up.",
+            },
+        )
+        resp = client.patch(
+            f"/api/technologies/{tech_id}",
+            json={"registry_status": "Adopted", "rationale": "Now business as usual."},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["registry_status"] == "Adopted"
+        assert body["current_ring"] is None
+        assert body["current_segment_id"] is None
+
+    def test_adopted_is_distinct_from_archive(self, client: TestClient) -> None:
+        adopted = self._create_with_tech(client, "Adopted Distinct Tech")
+        archived = self._create_with_tech(client, "Archived Distinct Tech")
+        client.patch(
+            f"/api/technologies/{adopted['technology']['id']}",
+            json={"registry_status": "Adopted", "rationale": "Standard practice now."},
+        )
+        client.patch(
+            f"/api/technologies/{archived['technology']['id']}",
+            json={"registry_status": "Archive", "rationale": "Dropped."},
+        )
+        listed = client.get("/api/topics?registry_status=Adopted")
+        assert listed.status_code == 200
+        names = {t["canonical_name"] for t in listed.json()}
+        assert "Adopted Distinct Tech" in names
+        assert "Archived Distinct Tech" not in names
+
+    def test_returning_from_adopted_emits_reactivated(self, client: TestClient) -> None:
+        data = self._create_with_tech(client, "Reactivated From Adopted")
+        tech_id = data["technology"]["id"]
+        seg_id = self._first_segment_id(client)
+        client.patch(
+            f"/api/technologies/{tech_id}",
+            json={"registry_status": "Adopted", "rationale": "Adopted."},
+        )
+        client.patch(
+            f"/api/technologies/{tech_id}",
+            json={
+                "registry_status": "On Radar",
+                "current_ring": "Pilot",
+                "current_segment_id": seg_id,
+                "rationale": "New generation worth piloting.",
+            },
+        )
+        events = client.get(f"/api/technologies/{tech_id}/movements").json()
+        assert any(e["event_type"] == "Reactivated" for e in events)
+
     def test_ring_change_emits_event(self, client: TestClient) -> None:
         data = self._create_with_tech(client, "Fuel Cell System")
         tech_id = data["technology"]["id"]
