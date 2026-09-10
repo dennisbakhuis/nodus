@@ -111,8 +111,10 @@ The same filters as the list, and they behave slightly differently in each mode:
 - In **Dependencies**, filtering narrows what the lineage may pass through. A
   filtered-out technology's dependencies are not the anchor's dependencies.
 
-Registry Status defaults to **On Radar**. Backlog and Archive technologies are
-still part of the structure — switch them on to see them.
+Registry Status defaults to **On Radar**. Backlog, Adopted and Archive
+technologies are still part of the structure — switch them on to see them. Only
+**On Radar** entries appear on the radar itself; the other three hold no ring or
+segment, so there is nowhere to draw them.
 
 ## Exporting
 

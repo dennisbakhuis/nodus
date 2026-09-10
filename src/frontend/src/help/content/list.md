@@ -9,7 +9,7 @@ The sidebar carries the same **Filters** as the radar, plus a few writer tools.
 The **↺** by the Filters heading clears everything.
 
 - **Search** — free text over names and peer references.
-- **Registry Status** — On Radar, Backlog, Archive (multi-select; On Radar by
+- **Registry Status** — On Radar, Backlog, Adopted, Archive (multi-select; On Radar by
   default).
 - **Visibility** *(writers)* — All, Public, or Private topics.
 - **Segment**, **Rings**, **Movement** — multi-select chips.

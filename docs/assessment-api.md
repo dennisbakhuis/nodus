@@ -131,7 +131,7 @@ Auth: Writer or higher
 
 | Field | Type | Allowed values |
 |-------|------|----------------|
-| `registry_status` | enum | `"On Radar"`, `"Backlog"`, `"Archive"` |
+| `registry_status` | enum | `"On Radar"`, `"Backlog"`, `"Adopted"`, `"Archive"` |
 | `current_ring` | enum | `"Invest"`, `"Pilot"`, `"Explore"`, `"Monitor"` |
 | `current_segment_id` | UUID | Existing segment id |
 | `hero_image_id` | UUID | Existing media asset id |
@@ -140,8 +140,8 @@ Auth: Writer or higher
 **Behavior:**
 
 - The `On Radar` status requires both `current_ring` and `current_segment_id`. Non-`On Radar` statuses require both to be null. The database enforces this via a CHECK constraint.
-- Moving to `Archive` automatically clears `current_ring` and `current_segment_id`.
-- A status transition emits a MovementEvent of type `Added` (Backlog → On Radar), `Reactivated` (Archive → On Radar), or `StatusChanged` (other transitions).
+- Leaving `On Radar` for any status automatically clears `current_ring` and `current_segment_id`, so neither `Adopted` nor `Archive` can be plotted.
+- A status transition emits a MovementEvent of type `Added` (Backlog → On Radar), `Reactivated` (Archive or Adopted → On Radar), or `StatusChanged` (other transitions).
 - A ring change on an `On Radar` technology emits a `RingChanged` MovementEvent.
 - The `rationale` field is included on the emitted event(s). Provide one — without it, the system generates a generic message that is less useful for the audit trail.
 
