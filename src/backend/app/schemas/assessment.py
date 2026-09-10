@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.assessment import (
     CollaborationPotential,
@@ -12,8 +12,18 @@ from app.models.assessment import (
 )
 
 
+TRL_MIN = 1
+TRL_MAX = 9
+
+
 class AssessmentCreate(BaseModel):
-    """Request schema for creating an Assessment."""
+    """Request schema for creating an Assessment.
+
+    ``trl`` is bounded to the standard 1-9 scale, so a value outside it is a 422
+    rather than a row the UI cannot render. The table CHECK is wider only so
+    rows imported against the IEA-extended range still load; nothing may write
+    one.
+    """
 
     strategic_relevance: StrategicRelevance | None = None
     strategic_relevance_notes: str | None = None
@@ -25,7 +35,7 @@ class AssessmentCreate(BaseModel):
     time_to_mainstream_notes: str | None = None
     collaboration_potential: CollaborationPotential | None = None
     collaboration_potential_notes: str | None = None
-    trl: int | None = None
+    trl: int | None = Field(default=None, ge=TRL_MIN, le=TRL_MAX)
     trl_notes: str | None = None
 
 

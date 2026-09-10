@@ -48,10 +48,11 @@ class Assessment(SQLModel, table=True):
     trl_phase is NOT stored — it is derived at render time:
     TRL 1-3 → Discovery; 4-6 → Development; 7-8 → Demonstration; 9 → Deployment.
 
-    The scale is NASA TRL 1-9; that is what the editor accepts and what new
-    assessments use. The CHECK is deliberately wider (1 ≤ trl ≤ 12) so legacy
-    and imported rows written against the IEA-extended 10-12 range still load;
-    those render as the Scale phase.
+    The scale is 1-9 and nothing above 9 is valid. Request validation enforces
+    that on every write, so the wider CHECK (1 ≤ trl ≤ 12) is now only a
+    read-path tolerance: it exists so a database holding rows imported against
+    the IEA-extended 10-12 range still loads rather than failing at startup.
+    Such a row renders as an invalid TRL and should be corrected.
 
     All criterion fields are nullable because early-stage factsheets may lack full scores.
     """

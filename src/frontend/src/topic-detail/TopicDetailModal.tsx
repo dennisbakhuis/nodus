@@ -504,7 +504,18 @@ export function TopicDetailModal({
 
       if ((factsheetChanged || assessmentChanged) && topic.technology_id) {
         const assessment: AssessmentCreate = {};
-        if (editForm.trl) assessment.trl = parseInt(editForm.trl, 10);
+        if (editForm.trl) {
+          // The scale is 1-9. `min`/`max` on a number input only drive the
+          // spinner, so a typed value has to be checked here or the request
+          // is rejected by the API with a 422 the user cannot interpret.
+          const parsed = parseInt(editForm.trl, 10);
+          if (!Number.isInteger(parsed) || parsed < 1 || parsed > 9) {
+            setSaveError("TRL must be a whole number between 1 and 9.");
+            setSaving(false);
+            return;
+          }
+          assessment.trl = parsed;
+        }
         if (editForm.trl_notes) assessment.trl_notes = editForm.trl_notes;
         if (editForm.strategic_relevance)
           assessment.strategic_relevance =
