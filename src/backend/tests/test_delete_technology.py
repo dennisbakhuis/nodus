@@ -84,6 +84,35 @@ def test_delete_removes_relations_touching_the_topic(client: TestClient) -> None
     )
 
 
+def test_demoting_to_a_grouper_keeps_the_relations(client: TestClient) -> None:
+    """Dropping only the Technology row turns a topic into an umbrella.
+
+    Relations are edges between Topics, so an umbrella must keep the
+    cross-family links it already carries; wiping them here silently loses
+    curation work every time a family head is demoted.
+    """
+    demoted = _make(client, "Umbrella Topic")
+    neighbour = _make(client, "Neighbour Topic")
+    client.post(
+        "/api/relations",
+        json={
+            "from_topic_id": neighbour["topic_id"],
+            "to_topic_id": demoted["topic_id"],
+            "relation_type": "drives",
+        },
+    )
+
+    assert client.delete(f"/api/technologies/{demoted['tech_id']}").status_code == 204
+
+    detail = client.get(f"/api/topics/{demoted['slug']}").json()
+    assert detail["technology"] is None
+    remaining = client.get("/api/relations").json()
+    assert any(
+        r["from_topic_id"] == neighbour["topic_id"] and r["to_topic_id"] == demoted["topic_id"]
+        for r in remaining
+    )
+
+
 def test_group_children_are_lifted_not_orphaned(client: TestClient) -> None:
     """Deleting a parent must not strand its children outside the tree."""
     parent = _make(client, "Doomed Parent")

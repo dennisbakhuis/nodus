@@ -35,6 +35,7 @@ import type {
   TechnologyRelation,
 } from "../radar/types";
 import { TreeView } from "./TreeView";
+import { TreeLegend } from "./TreeLegend";
 import type { TreeViewControls } from "./usePanZoom";
 import {
   focusForest,
@@ -540,6 +541,10 @@ export function TreePage() {
             Nothing matches the current filters. Reset them in the sidebar to
             see the full tree.
           </EmptyState>
+        )}
+
+        {layout && layout.nodes.length > 0 && (
+          <TreeLegend layout={layout} data={data} />
         )}
 
         {openGroup && (

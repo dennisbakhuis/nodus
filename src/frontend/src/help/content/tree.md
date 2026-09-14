@@ -23,6 +23,11 @@ ring around a group node is coloured by its level, matching the column headers.
 A node with more beneath it than you can see says so: a collapsed label group
 carries a **+**, and a collapsed technology group's ring is drawn broken.
 
+All of this is spelled out in the **Legend** in the top-left corner of the
+canvas. It starts folded — click the header to open it — and follows whichever
+hierarchy you are in: node shapes, segment colours and levels in Groups,
+relation types in Dependencies.
+
 Every node with something beneath it carries a **⊖ / ⊕** control just to its
 left: that folds and unfolds the branch, and it is the only thing on a node
 that does. Clicking the node itself always opens what the node _is_.

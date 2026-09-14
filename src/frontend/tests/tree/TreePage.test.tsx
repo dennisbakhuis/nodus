@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TreePage } from "../../src/tree/TreePage";
@@ -135,6 +136,58 @@ describe("TreePage", () => {
     );
     expect(screen.getByText("ANCHOR")).toBeInTheDocument();
     expect(screen.getByText("DOWNSTREAM · LEVEL -1")).toBeInTheDocument();
+  });
+
+  // Folded by default: the canvas is what the reader came for, so the key
+  // announces itself without covering the corner until it is asked for.
+  it("offers a legend, folded, and unfolds it on request", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByLabelText("Technology tree")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Legend")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Group — never on the radar"),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Legend/ }));
+    expect(screen.getByText("Group — never on the radar")).toBeInTheDocument();
+    expect(screen.getByText("Data & AI")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Legend/ }));
+    expect(
+      screen.queryByText("Group — never on the radar"),
+    ).not.toBeInTheDocument();
+  });
+
+  // Groups mode tints links by generation, so the only thing a stroke colour
+  // can mean there is depth; dependency mode is the one with relation types.
+  it("keys levels in groups mode and relation types in dependency mode", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByLabelText("Technology tree")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: /Legend/ }));
+    expect(screen.getByText(/Column — level/)).toBeInTheDocument();
+    expect(screen.queryByText("hinders")).not.toBeInTheDocument();
+
+    fetchRelations.mockResolvedValue([
+      {
+        id: "r1",
+        from_topic_id: "alpha",
+        to_topic_id: "beta",
+        relation_type: "drives",
+        created_at: "",
+      },
+    ]);
+    renderPage("/tree?mode=deps&anchor=alpha&depth=2");
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: /Legend/ }).length).toBe(2),
+    );
+    await user.click(screen.getAllByRole("button", { name: /Legend/ })[1]!);
+    expect(screen.getAllByText("hinders").length).toBeGreaterThan(0);
   });
 
   it("surfaces a load failure", async () => {

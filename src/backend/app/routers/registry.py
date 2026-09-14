@@ -629,17 +629,22 @@ def delete_technology(
     accident; archive it first. Admin only.
 
     Deletes the factsheet stream and each factsheet's assessment, the movement
-    events, the initiatives, and every relation touching the Topic. Pass
-    ``delete_topic_too`` to remove the Topic itself along with its aliases,
-    lifting any group children to the Topic's own parent so no subtree is
-    orphaned.
+    events and the initiatives. Pass ``delete_topic_too`` to remove the Topic
+    itself along with its aliases, person links, peer references and every
+    relation touching it, lifting any group children to the Topic's own parent
+    so no subtree is orphaned.
+
+    Relations survive a Technology-only delete on purpose. They are edges
+    between Topics, and dropping the Technology row is how a topic becomes a
+    grouper -- an umbrella that keeps its cross-family links.
 
     Parameters
     ----------
     tech_id : uuid.UUID
         Technology identifier.
     delete_topic_too : bool
-        Also delete the owning Topic, its aliases and person links.
+        Also delete the owning Topic, its aliases, person links, peer
+        references and relations.
     """
     tech = session.get(Technology, tech_id)
     if tech is None:
@@ -678,19 +683,22 @@ def delete_technology(
     ).all():
         session.delete(initiative)
 
-    for relation in session.exec(
-        select(Relation).where(
-            or_(Relation.from_topic_id == topic_id, Relation.to_topic_id == topic_id)
-        )
-    ).all():
-        session.delete(relation)
-
     session.delete(tech)
     session.flush()
 
     if delete_topic_too:
         topic = session.get(Topic, topic_id)
         if topic is not None:
+            # Relations belong to the Topic, not the Technology, so they only go
+            # when the Topic does. Demoting a technology to a grouper -- dropping
+            # the Technology row and keeping the Topic as an umbrella -- has to
+            # leave the umbrella's edges intact.
+            for relation in session.exec(
+                select(Relation).where(
+                    or_(Relation.from_topic_id == topic_id, Relation.to_topic_id == topic_id)
+                )
+            ).all():
+                session.delete(relation)
             for child in session.exec(
                 select(Topic).where(Topic.parent_topic_id == topic_id)
             ).all():
