@@ -144,10 +144,15 @@ Auth: Writer or higher
 ### Permanent deletion
 
 `DELETE /api/technologies/{tech_id}` removes a Technology and everything it owns:
-its factsheet stream and each factsheet's assessment, its movement events, its
-initiatives, and every relation touching the Topic. Add `?delete_topic_too=true`
-to remove the Topic as well, with its aliases, person links and peer references;
-group children are lifted to the Topic's own parent so no subtree is orphaned.
+its factsheet stream and each factsheet's assessment, its movement events and
+its initiatives. Add `?delete_topic_too=true` to remove the Topic as well, with
+its aliases, person links, peer references and every relation touching it; group
+children are lifted to the Topic's own parent so no subtree is orphaned.
+
+Without `delete_topic_too` the Topic survives and keeps its relations. That is
+the supported way to demote a technology to a grouper: drop the Technology row
+and the Topic stays on as an umbrella, still carrying the cross-family edges
+someone curated onto it.
 
 Admin only, and it refuses anything still `On Radar` with a 409 — archive it
 first. Archiving remains the normal way to retire a technology, because the
