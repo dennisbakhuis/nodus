@@ -9,6 +9,10 @@
  *
  * Marks are drawn from `NODE_MARKS` and `RELATION_STROKES` rather than
  * re-specified here, so a legend row cannot drift from the thing it explains.
+ *
+ * Folded by default: the canvas is the thing the reader came for, and a key
+ * that covers the top-left corner of it on every visit earns its space only
+ * once.
  */
 
 import { useState } from "react";
@@ -88,7 +92,7 @@ function NodeMark({ kind }: { kind: TreeNodeKind }) {
 }
 
 export function TreeLegend({ layout, data }: Props) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   const levels = [...new Set(layout.nodes.map((n) => n.level))].sort(
     (a, b) => a - b,
