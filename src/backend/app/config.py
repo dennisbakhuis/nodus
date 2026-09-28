@@ -197,14 +197,14 @@ def entra_redirect_uri() -> str:
 def entra_group_for_role(role: str) -> str:
     """Return the configured Entra group object ID for an application role.
 
-    ``role`` is the lowercase enum value (``admin``/``writer``/``reader``/
-    ``public_reader``). Unknown roles return an empty string.
+    ``role`` is the lowercase enum value (``admin``/``writer``/``reader``).
+    Unknown roles, ``public_reader`` included, return an empty string: a
+    signed-in Entra user is never mapped to the anonymous role.
     """
     suffix_by_role = {
         "admin": "ADMIN",
         "writer": "WRITER",
         "reader": "READER",
-        "public_reader": "PUBLIC_READER",
     }
     suffix = suffix_by_role.get(role.lower())
     if suffix is None:

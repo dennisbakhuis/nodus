@@ -222,20 +222,27 @@ def test_role_from_group_ids_picks_highest_privilege(
     monkeypatch.setenv("NODUS_AUTH_ENTRA_GROUP_ADMIN", "GADM")
     monkeypatch.setenv("NODUS_AUTH_ENTRA_GROUP_WRITER", "GWRT")
     monkeypatch.setenv("NODUS_AUTH_ENTRA_GROUP_READER", "GRDR")
-    monkeypatch.setenv("NODUS_AUTH_ENTRA_GROUP_PUBLIC_READER", "GPUB")
 
     assert role_from_group_ids(["GRDR", "GADM"]) == UserRole.Admin
     assert role_from_group_ids(["GWRT", "GRDR"]) == UserRole.Writer
     assert role_from_group_ids(["GRDR"]) == UserRole.Reader
-    assert role_from_group_ids(["GPUB"]) == UserRole.PublicReader
 
 
-def test_role_from_group_ids_no_match_defaults_to_public_reader(
+def test_role_from_group_ids_no_match_defaults_to_reader(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A signed-in user is never PublicReader — that role is for anonymous visitors."""
     monkeypatch.setenv("NODUS_AUTH_ENTRA_GROUP_ADMIN", "GADM")
-    assert role_from_group_ids(["unrelated-group-id"]) == UserRole.PublicReader
-    assert role_from_group_ids([]) == UserRole.PublicReader
+    assert role_from_group_ids(["unrelated-group-id"]) == UserRole.Reader
+    assert role_from_group_ids([]) == UserRole.Reader
+
+
+def test_role_from_group_ids_ignores_public_reader_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A leftover PUBLIC_READER group variable cannot pull a signed-in user below Reader."""
+    monkeypatch.setenv("NODUS_AUTH_ENTRA_GROUP_PUBLIC_READER", "GPUB")
+    assert role_from_group_ids(["GPUB"]) == UserRole.Reader
 
 
 def test_role_from_app_roles_picks_highest_privilege() -> None:
@@ -244,7 +251,6 @@ def test_role_from_app_roles_picks_highest_privilege() -> None:
     assert role_from_app_roles(["reader", "admin"]) == UserRole.Admin
     assert role_from_app_roles(["writer"]) == UserRole.Writer
     assert role_from_app_roles(["reader"]) == UserRole.Reader
-    assert role_from_app_roles(["public_reader"]) == UserRole.PublicReader
 
 
 def test_role_from_app_roles_is_case_insensitive() -> None:
@@ -263,6 +269,7 @@ def test_role_from_app_roles_returns_none_when_unmapped() -> None:
     assert role_from_app_roles([]) is None
     assert role_from_app_roles(None) is None
     assert role_from_app_roles(["Topic.Read.All", 42]) is None
+    assert role_from_app_roles(["public_reader"]) is None
 
 
 def test_extract_group_ids_present() -> None:
@@ -487,7 +494,7 @@ def test_entra_callback_app_role_survives_group_overage(
 
     This is the exact token shape the TenneT tenant emits — no ``groups`` claim,
     a ``_claim_names`` pointer, and a populated ``roles`` claim. Before app-role
-    support this user landed on public_reader.
+    support this user landed on the fallback role.
     """
     response = _run_callback(
         anon_client,
@@ -554,7 +561,7 @@ def test_entra_callback_overage_without_app_roles_warns(
     entra_settings: EntraSettings,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Overage and no app roles still means public_reader — but no longer silently."""
+    """Overage and no app roles falls back to reader — but not silently."""
     with caplog.at_level("WARNING", logger="app.auth_entra"):
         response = _run_callback(
             anon_client,
@@ -566,7 +573,7 @@ def test_entra_callback_overage_without_app_roles_warns(
 
     assert response.status_code == 302, response.text
     created = session.exec(select(User).where(User.entra_oid == "oid-eve")).one()
-    assert created.role == UserRole.PublicReader.value
+    assert created.role == UserRole.Reader.value
     assert "no app roles" in caplog.text
     assert "overage=True" in caplog.text
 
@@ -710,3 +717,70 @@ def test_entra_callback_auth_disabled_short_circuits_entra(
         "providers": [],
         "public_reader_disabled": False,
     }
+
+
+def test_entra_callback_without_role_or_group_provisions_reader(
+    anon_client: TestClient,
+    entra_env: None,
+    session: Session,
+    rsa_key: RSAKey,
+    entra_settings: EntraSettings,
+) -> None:
+    """A signed-in employee in none of the configured groups is a Reader, not a PublicReader."""
+    response = _run_callback(
+        anon_client,
+        rsa_key,
+        entra_settings,
+        oid="oid-eve",
+        groups=["unrelated-group-id"],
+    )
+
+    assert response.status_code == 302, response.text
+    created = session.exec(select(User).where(User.entra_oid == "oid-eve")).one()
+    assert created.role == UserRole.Reader.value
+
+
+def test_entra_callback_promotes_existing_public_reader_to_reader(
+    anon_client: TestClient,
+    entra_env: None,
+    session: Session,
+    rsa_key: RSAKey,
+    entra_settings: EntraSettings,
+) -> None:
+    """Accounts provisioned as PublicReader by earlier releases are repaired on next login."""
+    session.add(
+        User(
+            username="eve@contoso.com",
+            first_name="Eve",
+            last_name="Engineer",
+            password_hash="",
+            role=UserRole.PublicReader.value,
+            entra_oid="oid-eve",
+        )
+    )
+    session.commit()
+
+    response = _run_callback(anon_client, rsa_key, entra_settings, oid="oid-eve", groups=[])
+
+    assert response.status_code == 302, response.text
+    user = session.exec(select(User).where(User.entra_oid == "oid-eve")).one()
+    session.refresh(user)
+    assert user.role == UserRole.Reader.value
+
+
+def test_entra_callback_without_role_succeeds_when_public_reader_disabled(
+    anon_client: TestClient,
+    entra_env: None,
+    session: Session,
+    rsa_key: RSAKey,
+    entra_settings: EntraSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disabling anonymous access must not lock out signed-in employees without a group."""
+    monkeypatch.setenv("NODUS_PUBLIC_READER_DISABLED", "1")
+
+    response = _run_callback(anon_client, rsa_key, entra_settings, oid="oid-eve", groups=[])
+
+    assert response.status_code == 302, response.text
+    created = session.exec(select(User).where(User.entra_oid == "oid-eve")).one()
+    assert created.role == UserRole.Reader.value
