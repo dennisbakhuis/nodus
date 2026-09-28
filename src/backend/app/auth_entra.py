@@ -101,18 +101,22 @@ def load_settings() -> EntraSettings:
     )
 
 
+ENTRA_ROLES: tuple[UserRole, ...] = (UserRole.Admin, UserRole.Writer, UserRole.Reader)
+
+
 def role_from_group_ids(group_ids: Iterable[str]) -> UserRole:
     """Pick the highest-privilege role whose configured group ID matches.
 
-    Returns ``UserRole.PublicReader`` when no group matches — never raises.
-    Order of precedence: Admin > Writer > Reader > PublicReader.
+    Returns ``UserRole.Reader`` when no group matches — never raises. A signed-in
+    Entra user is never ``PublicReader``: that role is reserved for anonymous
+    visitors. Order of precedence: Admin > Writer > Reader.
     """
     ids = {gid for gid in group_ids if gid}
-    for role in (UserRole.Admin, UserRole.Writer, UserRole.Reader, UserRole.PublicReader):
+    for role in ENTRA_ROLES:
         configured = config.entra_group_for_role(role.value)
         if configured and configured in ids:
             return role
-    return UserRole.PublicReader
+    return UserRole.Reader
 
 
 def role_from_app_roles(roles: Any) -> UserRole | None:
@@ -121,7 +125,9 @@ def role_from_app_roles(roles: Any) -> UserRole | None:
     Entra emits the appRole ``value`` strings, which this app defines to match
     :class:`UserRole` values exactly. Matching is case-insensitive and anything
     unrecognised is ignored, so an arbitrary claim string can never become a
-    role. Unlike ``groups``, app roles are never suppressed by an overage cap.
+    role. ``public_reader`` counts as unrecognised, since a signed-in user is
+    never an anonymous visitor. Unlike ``groups``, app roles are never
+    suppressed by an overage cap.
 
     Returns ``None`` when the claim is absent or carries no recognised value, so
     callers can fall back to :func:`role_from_group_ids`.
@@ -132,7 +138,7 @@ def role_from_app_roles(roles: Any) -> UserRole | None:
         values = {entry.strip().lower() for entry in roles if isinstance(entry, str)}
     else:
         return None
-    for role in (UserRole.Admin, UserRole.Writer, UserRole.Reader, UserRole.PublicReader):
+    for role in ENTRA_ROLES:
         if role.value in values:
             return role
     return None

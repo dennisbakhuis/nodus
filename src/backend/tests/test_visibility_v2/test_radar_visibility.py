@@ -10,10 +10,15 @@ Two perimeters are exercised here:
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import Session
 
+from app.models.setting import Setting
 from app.models.user import UserRole
+from app.services.visibility import VISIBILITY_SETTING_KEY
 
 
 def _get_radar(
@@ -89,3 +94,42 @@ def test_radar_anonymous_does_not_leak_pii_strings(
     text = resp.text
     assert "jane.internal@example.com" not in text
     assert "Confidential notes (internal-only)." not in text
+
+
+def test_radar_survives_peer_references_hidden_from_anonymous(
+    anon_client: TestClient, session: Session, public_topic_slug: str
+) -> None:
+    """Hiding `peer_references` from public readers empties it instead of failing validation."""
+    session.add(
+        Setting(
+            key=VISIBILITY_SETTING_KEY,
+            value=json.dumps({"peer_references": ["reader", "writer", "admin"]}),
+        )
+    )
+    session.commit()
+
+    resp = anon_client.get("/api/radar/current")
+    assert resp.status_code == 200, resp.text
+    entry = next(e for e in resp.json()["entries"] if e["slug"] == public_topic_slug)
+    assert entry["peer_references"] == []
+    assert "Same tech at peer org" not in resp.text
+
+
+def test_radar_keeps_peer_references_for_reader_when_hidden_from_anonymous(
+    anon_client: TestClient,
+    session: Session,
+    public_topic_slug: str,
+    role_headers: dict[UserRole, dict[str, str]],
+) -> None:
+    """The same override leaves `peer_references` intact for roles it still lists."""
+    session.add(
+        Setting(
+            key=VISIBILITY_SETTING_KEY,
+            value=json.dumps({"peer_references": ["reader", "writer", "admin"]}),
+        )
+    )
+    session.commit()
+
+    body = _get_radar(anon_client, UserRole.Reader, role_headers)
+    entry = next(e for e in body["entries"] if e["slug"] == public_topic_slug)
+    assert [pr["peer_title"] for pr in entry["peer_references"]] == ["Same tech at peer org"]

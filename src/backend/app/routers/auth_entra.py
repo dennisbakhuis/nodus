@@ -29,6 +29,7 @@ from sqlmodel import select
 from app import auth_entra, config
 from app.auth import SESSION_TTL, AdminDep, generate_token, hash_token
 from app.auth_entra import (
+    ENTRA_ROLES,
     EntraConfigError,
     EntraValidationError,
     extract_group_ids_from_claims,
@@ -58,7 +59,7 @@ def _entra_enabled_or_404() -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
 
-_ROLE_ORDER = ("admin", "writer", "reader", "public_reader")
+_ROLE_ORDER = tuple(role.value for role in ENTRA_ROLES)
 
 
 @router.get("/admin/config")
@@ -270,29 +271,20 @@ def _resolve_or_provision_user(
         if group_ids is None:
             # No app roles, and the groups claim is unusable — either absent or
             # suppressed by Entra's per-token overage cap, which leaves only a
-            # _claim_names pointer behind. Both land everyone on public_reader,
-            # so say so loudly. Documented in docs/auth.md.
+            # _claim_names pointer behind. Both land everyone on reader, which
+            # silently demotes writers and admins, so say so loudly. Documented
+            # in docs/auth.md.
             _log.warning(
                 "Entra token for oid=%s has no app roles and no usable groups "
-                "claim (overage=%s) — assigning public_reader; assign the "
+                "claim (overage=%s) — assigning reader; assign the "
                 "security groups to app roles or set "
                 "groupMembershipClaims=ApplicationGroup",
                 oid,
                 isinstance(claims.get("_claim_names"), dict),
             )
-            role = UserRole.PublicReader
+            role = UserRole.Reader
         else:
             role = role_from_group_ids(group_ids)
-
-    if config.public_reader_disabled() and role == UserRole.PublicReader:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "This account has no Reader/Writer/Admin app role or group "
-                "membership and public-reader access is disabled on this "
-                "deployment."
-            ),
-        )
 
     existing = session.exec(select(User).where(User.entra_oid == oid)).first()
     if existing is not None:

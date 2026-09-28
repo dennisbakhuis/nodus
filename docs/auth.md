@@ -77,7 +77,7 @@ walkthrough in **§ Enabling Entra SSO** below).
 | `NODUS_AUTH_ENTRA_CLIENT_ID`          | —        | —     | required | App registration's application (client) GUID. |
 | `NODUS_AUTH_ENTRA_CLIENT_SECRET`      | —        | —     | required | A client secret from the app registration. |
 | `NODUS_AUTH_ENTRA_REDIRECT_URI`       | —        | —     | required | Must match the redirect URI registered in Entra. |
-| `NODUS_AUTH_ENTRA_GROUP_{ROLE}`       | —        | —     | optional | Fallback only, used when the token carries no app role. One per role; unmatched users default to PublicReader. |
+| `NODUS_AUTH_ENTRA_GROUP_{ROLE}`       | —        | —     | optional | Fallback only, used when the token carries no app role. One per role (admin, writer, reader); unmatched users default to Reader. |
 
 ## Permission enforcement
 
@@ -109,8 +109,6 @@ If a deployment must hide the radar entirely from logged-out visitors, set
 - Accounts with role `public_reader` cannot log in (`/api/auth/login`
   returns 401) and any session/API key resolving to a `public_reader` user
   is rejected at the same chokepoint.
-- Entra users who resolve to `PublicReader` (no configured group matched)
-  get `403` from the callback instead of a session token.
 - `GET /api/auth/config` includes `"public_reader_disabled": true` so the
   SPA can hide any "browse anonymously" affordance.
 
@@ -226,7 +224,7 @@ user's transitive security-group object IDs.
 > **Overage warning.** Entra caps the `groups` claim at roughly 200
 > entries per token. Above that it omits `groups` entirely and emits a
 > `_claim_names` overage pointer instead, which the backend cannot
-> resolve — every affected user then lands as `PublicReader`. In large
+> resolve — every affected user then lands as `Reader`. In large
 > tenants accounts routinely exceed the cap, so **use app roles** rather
 > than relying on this. See the section below on group overage.
 
@@ -244,8 +242,9 @@ that's what the backend matches against, not the display name.
 
 → `NODUS_AUTH_ENTRA_GROUP_ADMIN`, `NODUS_AUTH_ENTRA_GROUP_WRITER`, etc.
 
-`NODUS_AUTH_ENTRA_GROUP_PUBLIC_READER` is optional — users who are in
-none of the configured groups default to `PublicReader` automatically.
+Users who are in none of the configured groups default to `Reader`. A
+signed-in Entra user is never `PublicReader` — that role is reserved for
+anonymous visitors — so there is no group variable for it.
 
 These variables are only the **fallback**. When the app roles from step 4
 are assigned, the backend resolves the role from the `roles` claim and
@@ -286,7 +285,6 @@ NODUS_AUTH_ENTRA_REDIRECT_URI=https://radar.example.com/api/auth/entra/callback
 NODUS_AUTH_ENTRA_GROUP_ADMIN=<object id of radar-admins>
 NODUS_AUTH_ENTRA_GROUP_WRITER=<object id of radar-writers>
 NODUS_AUTH_ENTRA_GROUP_READER=<object id of radar-readers>
-# NODUS_AUTH_ENTRA_GROUP_PUBLIC_READER is optional — see above.
 ```
 
 Make sure `NODUS_AUTH_DISABLED` is **not** set; it short-circuits every
@@ -345,7 +343,7 @@ popover, not removed. Local logins continue to hit `/api/auth/login`.
 | Redirect to Microsoft fails with `AADSTS50011`       | The redirect URI sent by the backend does not match any registered URI. Check `NODUS_AUTH_ENTRA_REDIRECT_URI` matches exactly (scheme, host, path, no trailing slash). |
 | Callback returns `400 OIDC state cookie missing or expired` | The user took longer than 5 minutes between clicking the button and finishing the Microsoft prompt, or the SPA and backend are on different origins so the cookie was dropped. |
 | Callback returns `401 Entra ID token validation failed` | The deployment's `NODUS_AUTH_ENTRA_CLIENT_ID` does not match the `aud` claim in tokens minted by this tenant, or the JWKS endpoint is unreachable. |
-| Every Entra user lands as `PublicReader`             | No app roles are assigned and the group mapping is not resolving. Check the backend log for the `no app roles and no usable groups claim` WARNING — `overage=True` there means the `groups` claim was suppressed and app roles (Step 4) are the fix. |
+| Every Entra user lands as `Reader`                   | No app roles are assigned and the group mapping is not resolving. Check the backend log for the `no app roles and no usable groups claim` WARNING — `overage=True` there means the `groups` claim was suppressed and app roles (Step 4) are the fix. |
 | `503 Entra SSO is not fully configured`              | One of the required `NODUS_AUTH_ENTRA_*` env vars is unset or empty. The error body lists which ones. |
 
 ## Entra → role mapping
@@ -354,25 +352,24 @@ When Entra is enabled, the backend resolves the role from the ID token in
 this order, stopping at the first step that yields one:
 
 1. **App roles.** The `roles` claim is matched against the application
-   role names (`admin`, `writer`, `reader`, `public_reader`),
-   case-insensitively. Unrecognised values are ignored, so an arbitrary
-   claim string can never become a role. When the claim carries several
-   values the highest privilege wins: Admin > Writer > Reader >
-   PublicReader.
+   role names (`admin`, `writer`, `reader`), case-insensitively.
+   Unrecognised values — `public_reader` included — are ignored, so an
+   arbitrary claim string can never become a role. When the claim carries
+   several values the highest privilege wins: Admin > Writer > Reader.
 2. **Group object IDs.** Only when step 1 yields nothing. The backend
-   reads four env vars and picks the highest-privilege role whose
+   reads three env vars and picks the highest-privilege role whose
    configured group object ID appears in the user's `groups` claim:
 
    ```
    NODUS_AUTH_ENTRA_GROUP_ADMIN=<object-id>
    NODUS_AUTH_ENTRA_GROUP_WRITER=<object-id>
    NODUS_AUTH_ENTRA_GROUP_READER=<object-id>
-   NODUS_AUTH_ENTRA_GROUP_PUBLIC_READER=<object-id>
    ```
 
-3. **`PublicReader`**, when neither applies. A user with no app role and
-   no matching group lands here, as does a user whose `groups` claim is in
-   overage. The second case is logged as a WARNING on the `app.auth_entra`
+3. **`Reader`**, when neither applies. Signing in with Entra is itself
+   proof of membership of the tenant, so it never yields the anonymous
+   `PublicReader` role. A user with no app role and no matching group
+   lands here, as does a user whose `groups` claim is in overage. The second case is logged as a WARNING on the `app.auth_entra`
    logger naming the overage explicitly, because it is otherwise
    indistinguishable from a correctly-configured user with no membership.
 
