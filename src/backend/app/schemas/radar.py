@@ -8,8 +8,9 @@ shape and the frontend can drop the parallel hand-typed module.
 The shape mirrors the dict construction at ``app/routers/radar.py:266-325``
 line-by-line; tests cover the round-trip so any drift surfaces immediately.
 
-Visibility-filtered fields (``persons`` for non-admin / non-internal callers)
-are declared ``Optional`` so the post-strip payload still validates.
+Every ``RadarEntry`` field that ``DEFAULT_FIELD_ROLES`` lets an admin hide
+(``persons``, ``peer_references``) carries a default, so the post-strip payload
+still validates whichever roles the visibility config excludes.
 """
 
 from __future__ import annotations
@@ -74,7 +75,10 @@ class RadarEntry(BaseModel):
     last_updated: str | None
     hero_image_url: str | None
     peer_reference_count: int
-    peer_references: list[PeerReferenceSummary]
+    # Stripped when the visibility config hides peer references from the
+    # caller's role. Defaults to an empty list rather than None so clients
+    # can iterate it unconditionally, as the radar search and filters do.
+    peer_references: list[PeerReferenceSummary] = []
     # Stripped for PublicReader by apply_field_visibility. Required for
     # internal roles, omitted (not None) for public.
     persons: list[RadarPersonLink] | None = None
