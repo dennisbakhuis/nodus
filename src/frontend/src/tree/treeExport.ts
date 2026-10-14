@@ -20,6 +20,7 @@ import {
   NODUS_MARK_HREF,
   inlineComputedStyles,
   inlineExternalImages,
+  mirrorDominantBaseline,
 } from "../radar/ExportMenu";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -191,6 +192,9 @@ export async function prepareTreeExportSvg(
   // Runs first, while clone and live are still structurally identical — it
   // walks both trees in lockstep and stops as soon as they diverge.
   inlineComputedStyles(live, clone);
+  // Radial captions hang on `dominant-baseline: middle`, which svg2pdf.js
+  // does not read; see the radar export.
+  mirrorDominantBaseline(clone);
 
   neutralisePanZoom(clone);
 

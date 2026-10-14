@@ -1,3 +1,16 @@
+/** Long edge, in device pixels, a PNG export aims for. */
+export const PNG_TARGET_LONG_EDGE = 4096;
+
+/** Pixel ratio that puts the long edge of a `width` × `height` SVG at
+ * `PNG_TARGET_LONG_EDGE`, kept between 2× and 4×: a small radar still comes
+ * out crisp on a high-density screen and a sprawling tree stays within what
+ * browsers will rasterize in one canvas. */
+export function exportPixelRatio(width: number, height: number): number {
+  const longEdge = Math.max(width, height);
+  if (!longEdge) return 2;
+  return Math.min(4, Math.max(2, PNG_TARGET_LONG_EDGE / longEdge));
+}
+
 /** Rasterize a self-contained SVG to a PNG data URL.
  *
  * Uses the canonical SVG→canvas path (serialize → blob URL → Image →

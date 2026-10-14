@@ -3,12 +3,20 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  EXPORT_VIEWBOX_BOTTOM_PAD,
+  EXPORT_FRAME_PAD,
   ExportMenu,
   addNodusWatermark,
+  cssTransformsToAttributes,
+  dropHitAreas,
+  emulatePaintOrder,
   inlineComputedStyles,
+  mirrorDominantBaseline,
   prepareExportSvg,
   radarSvgString,
+  replaceArrowGlyphs,
+  snapFontFamilies,
+  snapFontWeights,
+  toLegacyColor,
 } from "../../src/radar/ExportMenu";
 import { mockSmallRadarData } from "../../src/radar/__fixtures__/mockRadarData";
 
@@ -16,7 +24,10 @@ import { mockSmallRadarData } from "../../src/radar/__fixtures__/mockRadarData";
 // loading) → mock the rasterizer so we can assert the download path receives
 // a PNG data URL without exercising the real canvas pipeline.
 const svgToPngSpy = vi.fn().mockResolvedValue("data:image/png;base64,STUB");
-vi.mock("../../src/radar/svgRaster", () => ({
+vi.mock("../../src/radar/svgRaster", async () => ({
+  ...(await vi.importActual<typeof import("../../src/radar/svgRaster")>(
+    "../../src/radar/svgRaster",
+  )),
   svgToPngDataUrl: (...args: unknown[]) => svgToPngSpy(...args),
 }));
 
@@ -34,7 +45,9 @@ vi.mock("jspdf", () => {
 });
 
 const svg2pdfSpy = vi.fn().mockResolvedValue(undefined);
-vi.mock("svg2pdf.js", () => ({ svg2pdf: (...args: unknown[]) => svg2pdfSpy(...args) }));
+vi.mock("svg2pdf.js", () => ({
+  svg2pdf: (...args: unknown[]) => svg2pdfSpy(...args),
+}));
 
 function ExportHarness() {
   // The ref is wired through to ExportMenu; jsdom's <svg> is enough for the
@@ -204,7 +217,8 @@ describe("ExportMenu", () => {
     expect(svgArg).toBeInstanceOf(SVGSVGElement);
     expect(typeof svgStringArg).toBe("string");
     expect(svgStringArg).toContain("<svg");
-    expect(scaleArg).toBe(2);
+    // A canvas this small gets the 4× ceiling of the long-edge target.
+    expect(scaleArg).toBe(4);
 
     await waitFor(() => expect(clicks.length).toBeGreaterThan(0));
     const png = clicks.find((c) => c.download.endsWith(".png"));
@@ -295,7 +309,7 @@ describe("addNodusWatermark", () => {
 });
 
 describe("prepareExportSvg", () => {
-  it("preserves source lines, sets explicit width/height, and stamps a watermark", async () => {
+  it("preserves source lines, frames the content, and stamps a watermark", async () => {
     const NS = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(NS, "svg");
     svg.setAttribute("viewBox", "0 0 100 50");
@@ -310,16 +324,19 @@ describe("prepareExportSvg", () => {
     document.body.appendChild(svg);
 
     const exported = await prepareExportSvg(svg);
-    expect(exported.getAttribute("width")).toBe("100");
-    // viewBox bottom is padded on export so the ring-label baseline +
-    // watermark don't get clipped when the fit transform replays at the
-    // export's 1:1 px-to-vb ratio.
-    expect(exported.getAttribute("height")).toBe(
-      String(50 + EXPORT_VIEWBOX_BOTTOM_PAD),
-    );
+    // The frame follows the content box (jsdom's getBBox stub: 0 0 50 14)
+    // plus the export pad on every side, not the live viewBox.
     expect(exported.getAttribute("viewBox")).toBe(
-      `0 0 100 ${50 + EXPORT_VIEWBOX_BOTTOM_PAD}`,
+      `${-EXPORT_FRAME_PAD} ${-EXPORT_FRAME_PAD} ${50 + 2 * EXPORT_FRAME_PAD} ${14 + 2 * EXPORT_FRAME_PAD}`,
     );
+    expect(exported.getAttribute("width")).toBe(
+      String(50 + 2 * EXPORT_FRAME_PAD),
+    );
+    expect(exported.getAttribute("height")).toBe(
+      String(14 + 2 * EXPORT_FRAME_PAD),
+    );
+    // The off-screen measurement leaves no positioning behind.
+    expect(exported.style.position).toBe("");
     const xml = radarSvgString(exported);
     expect(xml).toContain('data-relview-baseline=""');
     expect(xml).toContain("rgb(11, 22, 33)");
@@ -374,17 +391,15 @@ describe("prepareExportSvg", () => {
   it("converts <image href> URLs into inline data: URLs", async () => {
     const NS = "http://www.w3.org/2000/svg";
     // Bypass Response machinery — jsdom's Response.blob() round-trip is flaky.
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(
-        async () =>
-          ({
-            ok: true,
-            status: 200,
-            blob: async () =>
-              new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
-          }) as unknown as Response,
-      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          blob: async () =>
+            new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
+        }) as unknown as Response,
+    );
 
     const svg = document.createElementNS(NS, "svg");
     svg.setAttribute("viewBox", "0 0 100 100");
@@ -403,5 +418,268 @@ describe("prepareExportSvg", () => {
     expect(out.getAttribute("href")).toMatch(/^data:image\/png;base64,/);
     svg.remove();
     fetchSpy.mockRestore();
+  });
+});
+
+describe("cssTransformsToAttributes", () => {
+  const NS = "http://www.w3.org/2000/svg";
+
+  it("turns the pan/zoom CSS transform into a transform attribute", () => {
+    const svg = document.createElementNS(NS, "svg");
+    const g = document.createElementNS(NS, "g");
+    g.style.transform = "translate(64.37px, 47.88px) scale(0.92)";
+    g.style.transformOrigin = "0 0";
+    g.style.willChange = "transform";
+    g.style.transition = "transform 600ms ease";
+    svg.appendChild(g);
+
+    cssTransformsToAttributes(svg);
+
+    expect(g.getAttribute("transform")).toBe(
+      "translate(64.37 47.88) scale(0.92)",
+    );
+    expect(g.style.transform).toBe("");
+    expect(g.style.transformOrigin).toBe("");
+    expect(g.style.willChange).toBe("");
+    expect(g.style.transition).toBe("");
+  });
+
+  it("drops the deg unit of a focus rotation and replaces an attribute the style overrode", () => {
+    const svg = document.createElementNS(NS, "svg");
+    const g = document.createElementNS(NS, "g");
+    g.setAttribute("transform", "translate(1 1)");
+    g.style.transform = "scale(1.5) rotate(-37.5deg)";
+    svg.appendChild(g);
+
+    cssTransformsToAttributes(svg);
+
+    expect(g.getAttribute("transform")).toBe("scale(1.5) rotate(-37.5)");
+  });
+
+  it("leaves elements without an inline transform alone", () => {
+    const svg = document.createElementNS(NS, "svg");
+    const g = document.createElementNS(NS, "g");
+    g.setAttribute("transform", "rotate(12, 3, 4)");
+    svg.appendChild(g);
+
+    cssTransformsToAttributes(svg);
+
+    expect(g.getAttribute("transform")).toBe("rotate(12, 3, 4)");
+  });
+});
+
+describe("mirrorDominantBaseline", () => {
+  const NS = "http://www.w3.org/2000/svg";
+
+  it("copies an inlined or attribute dominant-baseline onto alignment-baseline", () => {
+    const svg = document.createElementNS(NS, "svg");
+    const inlined = document.createElementNS(NS, "text");
+    inlined.style.setProperty("dominant-baseline", "middle");
+    const attributed = document.createElementNS(NS, "text");
+    attributed.setAttribute("dominant-baseline", "hanging");
+    const plain = document.createElementNS(NS, "text");
+    plain.style.setProperty("dominant-baseline", "auto");
+    svg.append(inlined, attributed, plain);
+
+    mirrorDominantBaseline(svg);
+
+    expect(inlined.getAttribute("alignment-baseline")).toBe("middle");
+    expect(attributed.getAttribute("alignment-baseline")).toBe("hanging");
+    expect(plain.hasAttribute("alignment-baseline")).toBe(false);
+  });
+});
+
+describe("replaceArrowGlyphs", () => {
+  const NS = "http://www.w3.org/2000/svg";
+
+  function labelled(content: string, transform?: string): SVGSVGElement {
+    const svg = document.createElementNS(NS, "svg");
+    const text = document.createElementNS(NS, "text");
+    text.setAttribute("x", "360");
+    text.setAttribute("y", "220");
+    if (transform) text.setAttribute("transform", transform);
+    text.style.fontSize = "10px";
+    text.textContent = content;
+    svg.appendChild(text);
+    return svg;
+  }
+
+  function withGlyphMetrics(svg: SVGSVGElement, cell: DOMRect): void {
+    const text = svg.querySelector("text") as SVGTextElement & {
+      getExtentOfChar: (index: number) => DOMRect;
+    };
+    text.getExtentOfChar = () => cell;
+  }
+
+  it("draws the leading ▲ as an upward triangle and drops it from the text", () => {
+    const live = labelled("▲ DATA & AI", "rotate(71, 360, 220)");
+    withGlyphMetrics(live, new DOMRect(295, 212, 10, 12));
+    document.body.appendChild(live);
+    const clone = live.cloneNode(true) as SVGSVGElement;
+
+    replaceArrowGlyphs(live, clone);
+
+    const path = clone.querySelector("path")!;
+    expect(path.getAttribute("data-arrow-glyph")).toBe("up");
+    expect(path.getAttribute("transform")).toBe("rotate(71, 360, 220)");
+    const [, x0, y0, , , , , apexX, apexY] = path.getAttribute("d")!.split(" ");
+    // Base sits below the glyph's centre (218), apex above, centred on x=300.
+    expect(Number(apexX)).toBeCloseTo(300, 5);
+    expect(Number(apexY)).toBeLessThan(218);
+    expect(Number(y0)).toBeGreaterThan(218);
+    expect(Number(x0)).toBeLessThan(300);
+    expect(clone.querySelector("text")!.textContent).toBe("DATA & AI");
+    live.remove();
+  });
+
+  it("draws a trailing ▼ pointing down", () => {
+    const live = labelled("PLATFORMS ▼");
+    withGlyphMetrics(live, new DOMRect(430, 212, 10, 12));
+    document.body.appendChild(live);
+    const clone = live.cloneNode(true) as SVGSVGElement;
+
+    replaceArrowGlyphs(live, clone);
+
+    const path = clone.querySelector("path")!;
+    expect(path.getAttribute("data-arrow-glyph")).toBe("down");
+    expect(path.hasAttribute("transform")).toBe(false);
+    const apexY = Number(path.getAttribute("d")!.split(" ").at(-2));
+    expect(apexY).toBeGreaterThan(218);
+    expect(clone.querySelector("text")!.textContent).toBe("PLATFORMS");
+    live.remove();
+  });
+
+  it("leaves labels alone when the browser offers no glyph metrics", () => {
+    const live = labelled("▲ DATA & AI");
+    const clone = live.cloneNode(true) as SVGSVGElement;
+
+    replaceArrowGlyphs(live, clone);
+
+    expect(clone.querySelector("path")).toBeNull();
+    expect(clone.querySelector("text")!.textContent).toBe("▲ DATA & AI");
+  });
+});
+
+describe("dropHitAreas", () => {
+  const NS = "http://www.w3.org/2000/svg";
+
+  function rect(fill: string, stroke?: string): SVGRectElement {
+    const el = document.createElementNS(NS, "rect");
+    el.style.fill = fill;
+    if (stroke) el.style.stroke = stroke;
+    return el;
+  }
+
+  it("removes rectangles that draw nothing and keeps the rest", () => {
+    const svg = document.createElementNS(NS, "svg");
+    const hitArea = rect("rgba(0, 0, 0, 0)");
+    const keyword = rect("transparent");
+    const outlined = rect("none", "rgb(1, 2, 3)");
+    const painted = rect("rgb(200, 220, 240)");
+    svg.append(hitArea, keyword, outlined, painted);
+
+    dropHitAreas(svg);
+
+    expect(Array.from(svg.children)).toEqual([outlined, painted]);
+  });
+});
+
+describe("snapFontWeights", () => {
+  const NS = "http://www.w3.org/2000/svg";
+
+  it("maps numeric weights onto normal and bold and leaves keywords alone", () => {
+    const svg = document.createElementNS(NS, "svg");
+    const semibold = document.createElementNS(NS, "text");
+    semibold.style.fontWeight = "600";
+    const regular = document.createElementNS(NS, "text");
+    regular.style.fontWeight = "400";
+    const keyword = document.createElementNS(NS, "text");
+    keyword.style.fontWeight = "bolder";
+    svg.append(semibold, regular, keyword);
+
+    snapFontWeights(svg);
+
+    expect(semibold.style.fontWeight).toBe("bold");
+    expect(regular.style.fontWeight).toBe("normal");
+    expect(keyword.style.fontWeight).toBe("bolder");
+  });
+});
+
+describe("toLegacyColor", () => {
+  it("rewrites color(srgb …) as rgb() and rgba()", () => {
+    expect(toLegacyColor("color(srgb 0.510392 0.708824 0.831765)")).toBe(
+      "rgb(130, 181, 212)",
+    );
+    expect(toLegacyColor("color(srgb 1 0 0 / 0.5)")).toBe(
+      "rgba(255, 0, 0, 0.5)",
+    );
+    expect(toLegacyColor("color(srgb 0 0 1 / 40%)")).toBe(
+      "rgba(0, 0, 255, 0.4)",
+    );
+  });
+
+  it("passes every other value through", () => {
+    expect(toLegacyColor("rgb(1, 2, 3)")).toBe("rgb(1, 2, 3)");
+    expect(toLegacyColor("none")).toBe("none");
+    expect(toLegacyColor("")).toBe("");
+  });
+});
+
+describe("emulatePaintOrder", () => {
+  const NS = "http://www.w3.org/2000/svg";
+
+  it("puts a stroke-only copy behind a haloed caption and leaves it fill-only", () => {
+    const svg = document.createElementNS(NS, "svg");
+    const text = document.createElementNS(NS, "text");
+    text.setAttribute("paint-order", "stroke");
+    text.setAttribute("stroke", "var(--color-white)");
+    text.setAttribute("stroke-width", "3");
+    text.style.stroke = "rgb(255, 255, 255)";
+    text.style.fill = "rgb(10, 20, 30)";
+    text.textContent = "Cloud Computing";
+    svg.appendChild(text);
+
+    emulatePaintOrder(svg);
+
+    const [halo, caption] = Array.from(svg.children) as [
+      SVGElement,
+      SVGElement,
+    ];
+    expect(halo.hasAttribute("data-text-halo")).toBe(true);
+    expect(halo.style.fill).toBe("none");
+    expect(halo.style.stroke).toBe("rgb(255, 255, 255)");
+    expect(halo.textContent).toBe("Cloud Computing");
+    expect(caption).toBe(text);
+    expect(caption.style.stroke).toBe("none");
+    expect(caption.hasAttribute("stroke")).toBe(false);
+    expect(caption.style.fill).toBe("rgb(10, 20, 30)");
+  });
+
+  it("ignores text without a halo", () => {
+    const svg = document.createElementNS(NS, "svg");
+    const text = document.createElementNS(NS, "text");
+    text.style.fill = "rgb(0, 0, 0)";
+    svg.appendChild(text);
+
+    emulatePaintOrder(svg);
+
+    expect(svg.children).toHaveLength(1);
+  });
+});
+
+describe("snapFontFamilies", () => {
+  it("points every text at jsPDF's lowercase helvetica entry", () => {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    const text = document.createElementNS(NS, "text");
+    text.style.fontFamily = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+    const span = document.createElementNS(NS, "tspan");
+    text.appendChild(span);
+    svg.appendChild(text);
+
+    snapFontFamilies(svg);
+
+    expect(text.style.fontFamily).toBe("helvetica");
+    expect(span.style.fontFamily).toBe("helvetica");
   });
 });

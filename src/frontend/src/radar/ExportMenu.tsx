@@ -2,21 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import jsPDF from "jspdf";
 import { svg2pdf } from "svg2pdf.js";
 import type { RadarData } from "./types";
-import { svgToPngDataUrl } from "./svgRaster";
+import { exportPixelRatio, svgToPngDataUrl } from "./svgRaster";
 import { CX, CY, R_INNER, R_OUTER } from "./geometry";
 import { Button } from "../shared/Button";
 
 export const NODUS_MARK_HREF = "/nodus_mark.svg";
 
-// Viewport units added to the bottom of the cloned viewBox before export.
-// The fit transform on the inner <g> is in CSS px, and the on-screen
-// container's CSS-px-per-viewBox-unit ratio is rarely 1:1 — the export
-// pins the SVG at viewBox dimensions (so 1 CSS px ≡ 1 vb unit), which
-// replays the transform at a different effective scale and can push the
-// ring-label baseline + watermark below the viewBox bottom. Adding a
-// small bottom pad gives that content room to land on canvas without
-// changing the radar's on-screen geometry.
-export const EXPORT_VIEWBOX_BOTTOM_PAD = 40;
+// Breathing room, in viewBox units, kept around the content on export.
+export const EXPORT_FRAME_PAD = 24;
+
+/** Segment labels carry their direction as a glyph; the export redraws it. */
+const ARROW_GLYPH = /[▲▼]/;
 
 type Variant = "sidebar" | "header";
 
@@ -91,6 +87,28 @@ const PRESENTATION_PROPS = [
   "dominant-baseline",
 ] as const;
 
+const SRGB_COLOR =
+  /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\)$/;
+
+/** Rewrite a computed `color(srgb r g b [/ a])` as `rgb()` / `rgba()`.
+ *
+ * Chrome resolves `color-mix()` — the tree's depth-tinted links — to the
+ * `color()` form, which svg2pdf.js and older SVG renderers cannot parse, so
+ * the links vanished from the PDF. Anything else passes through unchanged. */
+export function toLegacyColor(value: string): string {
+  const match = value.match(SRGB_COLOR);
+  if (!match) return value;
+  const [r, g, b] = [match[1], match[2], match[3]].map((channel) =>
+    Math.round(Number(channel) * 255),
+  );
+  const alpha = match[4];
+  if (alpha === undefined) return `rgb(${r}, ${g}, ${b})`;
+  const a = alpha.endsWith("%")
+    ? Number(alpha.slice(0, -1)) / 100
+    : Number(alpha);
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 /** Walk both trees in lockstep, copying resolved presentation styles from each
  * live element onto its clone. Stops when the trees diverge (defensive — the
  * caller passes a `cloneNode(true)` so structures should match). */
@@ -98,10 +116,7 @@ export function inlineComputedStyles(src: Element, dst: Element): void {
   const cs = window.getComputedStyle(src);
   for (const prop of PRESENTATION_PROPS) {
     const val = cs.getPropertyValue(prop);
-    if (!val || val === "normal" || (val === "none" && prop !== "fill")) {
-      // 'fill: none' is meaningful (open shape); other "none"s usually aren't.
-    }
-    if (val) (dst as SVGElement).style.setProperty(prop, val);
+    if (val) (dst as SVGElement).style.setProperty(prop, toLegacyColor(val));
   }
   const srcKids = src.children;
   const dstKids = dst.children;
@@ -147,6 +162,232 @@ export async function inlineExternalImages(svg: SVGSVGElement): Promise<void> {
       }
     }),
   );
+}
+
+/** Mount `svg` off-screen so layout-dependent APIs (getBBox, glyph metrics,
+ * the canvas rasterizer, svg2pdf measurement) can run on it, then take it out
+ * again and drop the positioning that put it there. */
+export function withOffscreen<T>(
+  svg: SVGSVGElement,
+  work: () => Promise<T> | T,
+): Promise<T> {
+  svg.style.position = "absolute";
+  svg.style.left = "-99999px";
+  svg.style.top = "0";
+  document.body.appendChild(svg);
+  return Promise.resolve()
+    .then(work)
+    .finally(() => {
+      svg.remove();
+      for (const prop of ["position", "left", "top"]) {
+        svg.style.removeProperty(prop);
+      }
+    });
+}
+
+/** Rewrite inline CSS transforms into `transform` attributes.
+ *
+ * The radar pans, zooms and focuses through `style.transform`, which browsers
+ * honour in a standalone SVG but svg2pdf.js, Inkscape, Illustrator and Office
+ * do not — the PDF drew the radar at its unfitted coordinates. Every element
+ * the app transforms this way sets `transform-origin: 0 0`, so the function
+ * list carries over verbatim once the px / deg units are dropped. An inline
+ * transform overrides the presentation attribute, so it replaces one too. */
+export function cssTransformsToAttributes(svg: SVGSVGElement): void {
+  for (const el of svg.querySelectorAll<SVGElement>("*")) {
+    const css = el.style.transform;
+    if (css && css !== "none") {
+      el.setAttribute(
+        "transform",
+        css.replace(/px|deg/g, "").replace(/,\s*/g, " "),
+      );
+    }
+    for (const prop of [
+      "transform",
+      "transform-origin",
+      "will-change",
+      "transition",
+    ]) {
+      el.style.removeProperty(prop);
+    }
+  }
+}
+
+/** Mirror `dominant-baseline` into `alignment-baseline` on every text node.
+ *
+ * The radar's rotated labels sit on `dominant-baseline: middle`, which
+ * svg2pdf.js never reads — it positions text from `alignment-baseline` only —
+ * so PDF labels landed half a line off their SVG position. Browsers resolve
+ * the two properties to the same baseline, leaving the SVG and PNG as they
+ * were. */
+export function mirrorDominantBaseline(svg: SVGSVGElement): void {
+  for (const text of svg.querySelectorAll<SVGElement>("text, tspan")) {
+    const value =
+      text.style.getPropertyValue("dominant-baseline") ||
+      text.getAttribute("dominant-baseline");
+    if (!value || value === "auto") continue;
+    text.setAttribute("alignment-baseline", value);
+  }
+}
+
+/** Redraw the ▲ / ▼ of the segment labels as triangle paths.
+ *
+ * jsPDF's built-in fonts stop at WinAnsi, so the PDF printed the glyphs' raw
+ * code units ("%²", "%¼") where the arrows should be. The triangle takes the
+ * glyph's cell as measured on the live label — a detached clone has no glyph
+ * metrics — and is drawn in the label's own coordinate system, so it follows
+ * the label's rotation. The label keeps its anchor: the glyph sits at the
+ * free end of the text, so dropping it leaves the name where it was. Walks
+ * both trees' <text> lists in lockstep, so it has to run before the clone
+ * gains or loses any. */
+export function replaceArrowGlyphs(
+  live: SVGSVGElement,
+  clone: SVGSVGElement,
+): void {
+  const liveTexts = Array.from(live.querySelectorAll<SVGTextElement>("text"));
+  const cloneTexts = Array.from(clone.querySelectorAll<SVGTextElement>("text"));
+  if (liveTexts.length !== cloneTexts.length) return;
+  liveTexts.forEach((liveText, i) => {
+    if (typeof liveText.getExtentOfChar !== "function") return;
+    const cloneText = cloneTexts[i]!;
+    const textNode = Array.from(cloneText.childNodes).find(
+      (node) =>
+        node.nodeType === Node.TEXT_NODE &&
+        ARROW_GLYPH.test(node.textContent ?? ""),
+    );
+    if (!textNode) return;
+    const content = textNode.textContent ?? "";
+    const index = content.search(ARROW_GLYPH);
+    let cell: DOMRect;
+    try {
+      cell = liveText.getExtentOfChar(index);
+    } catch {
+      return;
+    }
+    if (!cell.width || !cell.height) return;
+
+    const fontSize = parseFloat(getComputedStyle(liveText).fontSize) || 10;
+    const cx = cell.x + cell.width / 2;
+    const cy = cell.y + cell.height / 2;
+    const halfW = fontSize * 0.36;
+    const halfH = fontSize * 0.31;
+    const pointsUp = content[index] === "▲";
+    const baseY = pointsUp ? cy + halfH : cy - halfH;
+    const apexY = pointsUp ? cy - halfH : cy + halfH;
+
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("data-arrow-glyph", pointsUp ? "up" : "down");
+    path.setAttribute(
+      "d",
+      `M ${cx - halfW} ${baseY} L ${cx + halfW} ${baseY} L ${cx} ${apexY} Z`,
+    );
+    path.setAttribute("fill", getComputedStyle(liveText).fill);
+    const transform = cloneText.getAttribute("transform");
+    if (transform) path.setAttribute("transform", transform);
+    cloneText.parentNode?.insertBefore(path, cloneText.nextSibling);
+
+    textNode.textContent = content.replace(/\s*[▲▼]\s*/, " ").trim();
+  });
+}
+
+const TRANSPARENT = /^(none|transparent|rgba\(\d+, \d+, \d+, 0\))$/;
+
+/** Drop the transparent rectangles the radar keeps as pointer targets around
+ * its labels. They draw nothing, but they reach further out than the labels
+ * they belong to and would otherwise set the export frame. */
+export function dropHitAreas(svg: SVGSVGElement): void {
+  for (const rect of svg.querySelectorAll<SVGRectElement>("rect")) {
+    const fill = rect.style.fill || rect.getAttribute("fill") || "none";
+    const stroke = rect.style.stroke || rect.getAttribute("stroke") || "none";
+    if (TRANSPARENT.test(fill) && TRANSPARENT.test(stroke)) rect.remove();
+  }
+}
+
+/** Snap numeric font weights onto `normal` / `bold`.
+ *
+ * jsPDF's built-in fonts come in those two weights only, and svg2pdf.js falls
+ * back to Times for any weight it cannot match — the semibold cycle label
+ * came out in a serif face. The computed styles the export inlines are
+ * numeric, so the PDF pass maps them onto the two the PDF can show. */
+export function snapFontWeights(svg: SVGSVGElement): void {
+  for (const el of svg.querySelectorAll<SVGElement>("text, tspan")) {
+    const weight = el.style.fontWeight || el.getAttribute("font-weight") || "";
+    const numeric = Number(weight);
+    if (!weight || !Number.isFinite(numeric)) continue;
+    el.style.fontWeight = numeric >= 600 ? "bold" : "normal";
+  }
+}
+
+/** Emulate `paint-order: stroke` for svg2pdf.js, which paints every text
+ * fill-then-stroke: the tree's captions carry a white 3px halo that way, and
+ * the PDF showed the halo on top of the letters. A stroke-only copy goes in
+ * behind each such text and the text itself keeps only its fill. */
+export function emulatePaintOrder(svg: SVGSVGElement): void {
+  for (const text of svg.querySelectorAll<SVGElement>("text")) {
+    const order =
+      text.style.getPropertyValue("paint-order") ||
+      text.getAttribute("paint-order") ||
+      "";
+    if (!order.includes("stroke")) continue;
+    const stroke = text.style.stroke || text.getAttribute("stroke") || "none";
+    if (stroke === "none") continue;
+    const halo = text.cloneNode(true) as SVGElement;
+    halo.removeAttribute("id");
+    halo.setAttribute("data-text-halo", "");
+    halo.style.fill = "none";
+    text.parentNode?.insertBefore(halo, text);
+    text.style.stroke = "none";
+    text.removeAttribute("stroke");
+    text.removeAttribute("stroke-width");
+  }
+}
+
+/** Point every text at jsPDF's built-in Helvetica.
+ *
+ * The app's font stack starts with Helvetica Neue, which the PDF cannot
+ * embed, and svg2pdf.js only matches a family whose style list carries the
+ * weight it wants: jsPDF lists `Helvetica` with capitalised styles, so a bold
+ * caption fell through to the regular face. The lowercase `helvetica` entry
+ * carries `normal` and `bold` and is what the PDF was drawing with anyway. */
+export function snapFontFamilies(svg: SVGSVGElement): void {
+  for (const el of svg.querySelectorAll<SVGElement>("text, tspan")) {
+    el.style.fontFamily = "helvetica";
+  }
+}
+
+/** Last pass before svg2pdf.js sees the SVG: everything here works around a
+ * gap in that renderer and would only degrade the SVG and PNG exports. */
+export function prepareForPdf(svg: SVGSVGElement): void {
+  snapFontFamilies(svg);
+  snapFontWeights(svg);
+  emulatePaintOrder(svg);
+}
+
+/** Frame `svg` on what it draws: viewBox, width and height follow the union
+ * of its content plus `EXPORT_FRAME_PAD`. Needs the SVG mounted — a detached
+ * one reports an empty box — and falls back to `fallback` when it is not. */
+function frameToContent(
+  svg: SVGSVGElement,
+  fallback: { x: number; y: number; width: number; height: number },
+): void {
+  let box = fallback;
+  try {
+    const measured = svg.getBBox();
+    if (measured.width > 0 && measured.height > 0) {
+      box = {
+        x: measured.x - EXPORT_FRAME_PAD,
+        y: measured.y - EXPORT_FRAME_PAD,
+        width: measured.width + EXPORT_FRAME_PAD * 2,
+        height: measured.height + EXPORT_FRAME_PAD * 2,
+      };
+    }
+  } catch {
+    // jsdom and the like: keep the fallback frame.
+  }
+  if (!box.width || !box.height) return;
+  svg.setAttribute("viewBox", `${box.x} ${box.y} ${box.width} ${box.height}`);
+  svg.setAttribute("width", String(Math.round(box.width)));
+  svg.setAttribute("height", String(Math.round(box.height)));
 }
 
 /** Append a compact Nodus watermark (mark + "Nodus" wordmark) to the SVG.
@@ -232,8 +473,9 @@ export function addNodusWatermark(svg: SVGSVGElement): void {
 }
 
 /** Build a self-contained SVG ready for download / PDF embedding. Clones the
- * live SVG, resolves CSS variables to inline styles, inlines image hrefs, and
- * stamps a Nodus watermark in the bottom-right corner. */
+ * live SVG, resolves CSS variables to inline styles, turns the pan / zoom /
+ * focus CSS transforms into attributes, frames the result on its content,
+ * inlines image hrefs, and stamps a Nodus watermark. */
 export async function prepareExportSvg(
   live: SVGSVGElement,
 ): Promise<SVGSVGElement> {
@@ -244,19 +486,13 @@ export async function prepareExportSvg(
   if (!clone.getAttribute("xmlns:xlink")) {
     clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
   }
-  // Pin explicit width/height (so detached renderers like PDF / file-system
-  // viewers don't fall back to a 300×150 default) and extend the viewBox a
-  // touch at the bottom so the ring-label baseline + watermark survive the
-  // px-vs-vb-unit replay of the fit transform on export. The live SVG keeps
-  // its width="100%" sizing — we only override on the clone.
-  const vb = live.viewBox.baseVal;
-  if (vb.width && vb.height) {
-    const exportH = vb.height + EXPORT_VIEWBOX_BOTTOM_PAD;
-    clone.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.width} ${exportH}`);
-    clone.setAttribute("width", String(vb.width));
-    clone.setAttribute("height", String(exportH));
-  }
+  // Both passes walk live and clone in lockstep, so they run before anything
+  // is added to the clone.
   inlineComputedStyles(live, clone);
+  replaceArrowGlyphs(live, clone);
+  cssTransformsToAttributes(clone);
+  mirrorDominantBaseline(clone);
+  dropHitAreas(clone);
   // Watermark stamping happens before inlining so the mark's
   // <image href="/nodus_mark.svg"> is rewritten to a data: URL by the same
   // pass that handles the radar's other hero images. Three cases:
@@ -279,6 +515,21 @@ export async function prepareExportSvg(
       addNodusWatermark(clone);
     }
   }
+  // The live SVG fills its container and lets the fitted content spill past
+  // the viewBox, which clipped the labels along the top once the clone was
+  // pinned to viewBox dimensions. Frame the clone on its content instead —
+  // measured with the transforms now in attributes, so a zoomed or focused
+  // radar exports exactly what the reader sees. The live SVG keeps its
+  // width="100%" sizing; only the clone is pinned.
+  const vb = live.viewBox.baseVal;
+  await withOffscreen(clone, () =>
+    frameToContent(clone, {
+      x: vb.x,
+      y: vb.y,
+      width: vb.width || live.clientWidth,
+      height: vb.height || live.clientHeight,
+    }),
+  );
   await inlineExternalImages(clone);
   return clone;
 }
@@ -324,21 +575,6 @@ export function ExportMenu({
     }
   }
 
-  /** Mount a prepared SVG off-screen so layout-dependent APIs (getBBox, the
-   * canvas rasterizer, svg2pdf measurement) can run on it. Returns a cleanup. */
-  function withOffscreen<T>(
-    svg: SVGSVGElement,
-    work: () => Promise<T> | T,
-  ): Promise<T> {
-    svg.style.position = "absolute";
-    svg.style.left = "-99999px";
-    svg.style.top = "0";
-    document.body.appendChild(svg);
-    return Promise.resolve(work()).finally(() => {
-      svg.remove();
-    });
-  }
-
   async function exportSvg() {
     const live = svgRef.current;
     if (!live) return;
@@ -356,10 +592,11 @@ export function ExportMenu({
     if (!live) return;
     await withBusy(async () => {
       const exported = await prepare(live);
+      const vb = exported.viewBox.baseVal;
       const dataUrl = await svgToPngDataUrl(
         exported,
         radarSvgString(exported),
-        2,
+        exportPixelRatio(vb.width, vb.height),
       );
       const a = document.createElement("a");
       a.href = dataUrl;
@@ -375,6 +612,7 @@ export function ExportMenu({
     if (!live) return;
     await withBusy(async () => {
       const exported = await prepare(live);
+      prepareForPdf(exported);
       const w =
         exported.viewBox.baseVal.width ||
         Number(exported.getAttribute("width")) ||
@@ -436,7 +674,7 @@ export function ExportMenu({
           <MenuItem onClick={exportSvg} hint="Vector source — best for editing">
             SVG (vector)
           </MenuItem>
-          <MenuItem onClick={exportPng} hint="Raster bitmap @2× pixel ratio">
+          <MenuItem onClick={exportPng} hint="Raster bitmap, 4k px wide">
             PNG
           </MenuItem>
           <MenuItem onClick={exportPdf} hint="Vector PDF — selectable text">
