@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Office/Business",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "fastapi>=0.136.1",
     "sqlmodel>=0.0.38",

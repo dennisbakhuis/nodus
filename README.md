@@ -104,7 +104,7 @@ See [`docs/methodology.md`](docs/methodology.md) for the underlying tech-radar m
 ## Setup
 
 ### Prerequisites
-- **Python 3.14+** with [`uv`](https://github.com/astral-sh/uv) — install via `curl -LsSf https://astral.sh/uv/install.sh | sh` (or your package manager). `uv` will fetch a matching Python toolchain automatically if your system doesn't have one.
+- **Python 3.14** (pinned by `src/backend/.python-version`; 3.15 waits until its wheels catch up) with [`uv`](https://github.com/astral-sh/uv) — install via `curl -LsSf https://astral.sh/uv/install.sh | sh` (or your package manager). `uv` will fetch a matching Python toolchain automatically if your system doesn't have one.
 - **Node.js 20+** and **npm 9+** — install via [nvm](https://github.com/nvm-sh/nvm), [fnm](https://github.com/Schniz/fnm), or [nodejs.org](https://nodejs.org/)
 - **GNU Make** — preinstalled on macOS / most Linux distros; on Windows use WSL or `choco install make`
 - **pre-commit** (optional but recommended) — `uv tool install pre-commit`, then `pre-commit install` after cloning

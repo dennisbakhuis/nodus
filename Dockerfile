@@ -17,7 +17,8 @@ COPY src/frontend/ ./
 RUN npm run build
 
 # Stage 2: Python runtime with uv-managed deps + bundled frontend assets
-# Pinned to 3.14 because pyproject.toml requires-python = ">=3.14".
+# Pinned to 3.14: pyproject.toml holds requires-python = ">=3.14,<3.15" and
+# .python-version pins the local toolchain to the same line.
 FROM python:3.14-slim-bookworm AS runtime
 
 # APP_VERSION is the canonical version, passed in by the build command:
