@@ -53,7 +53,7 @@ export function FilterBar({ data, filters, onChange }: Props) {
       timeToMainstream: [],
       personIds: [],
       visibility: "all",
-      groupId: null,
+      groupIds: [],
     });
   }
 

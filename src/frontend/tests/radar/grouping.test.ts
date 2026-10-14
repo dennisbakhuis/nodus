@@ -17,29 +17,38 @@ const baseFilters: FilterState = {
   timeToMainstream: [],
   personIds: [],
   visibility: "all",
-  groupId: null,
+  groupIds: [],
 };
 
 describe("matchesGroup", () => {
-  it("is a no-op when groupId is null", () => {
-    expect(matchesGroup({ topic_id: "x" }, null)).toBe(true);
+  it("is a no-op when no group is selected", () => {
+    expect(matchesGroup({ topic_id: "x" }, [])).toBe(true);
   });
 
   it("matches the group node itself", () => {
-    expect(matchesGroup({ topic_id: "gen", ancestor_path: [] }, "gen")).toBe(
+    expect(matchesGroup({ topic_id: "gen", ancestor_path: [] }, ["gen"])).toBe(
       true,
     );
   });
 
   it("matches descendants via ancestor_path", () => {
     expect(
-      matchesGroup({ topic_id: "mas", ancestor_path: ["gen", "agents"] }, "gen"),
+      matchesGroup({ topic_id: "mas", ancestor_path: ["gen", "agents"] }, ["gen"]),
     ).toBe(true);
   });
 
   it("excludes unrelated entries", () => {
     expect(
-      matchesGroup({ topic_id: "other", ancestor_path: ["foo"] }, "gen"),
+      matchesGroup({ topic_id: "other", ancestor_path: ["foo"] }, ["gen"]),
+    ).toBe(false);
+  });
+
+  it("unions several selected groups", () => {
+    expect(
+      matchesGroup({ topic_id: "spot", ancestor_path: ["robots"] }, ["gen", "robots"]),
+    ).toBe(true);
+    expect(
+      matchesGroup({ topic_id: "other", ancestor_path: ["foo"] }, ["gen", "robots"]),
     ).toBe(false);
   });
 });
@@ -59,7 +68,7 @@ describe("group filter in list + radar", () => {
   it("list keeps the group and its descendants only", () => {
     const out = applyListFilters(
       entries,
-      { ...baseFilters, groupId: e0.topic_id },
+      { ...baseFilters, groupIds: [e0.topic_id] },
       data,
     );
     const ids = out.map((e) => e.topic_id).sort();
@@ -67,18 +76,18 @@ describe("group filter in list + radar", () => {
   });
 
   it("radar isVisible dims non-members", () => {
-    expect(isVisible(entries[0]!, data, { ...baseFilters, groupId: e0.topic_id })).toBe(
+    expect(isVisible(entries[0]!, data, { ...baseFilters, groupIds: [e0.topic_id] })).toBe(
       true,
     );
-    expect(isVisible(entries[1]!, data, { ...baseFilters, groupId: e0.topic_id })).toBe(
+    expect(isVisible(entries[1]!, data, { ...baseFilters, groupIds: [e0.topic_id] })).toBe(
       true,
     );
-    expect(isVisible(entries[2]!, data, { ...baseFilters, groupId: e0.topic_id })).toBe(
+    expect(isVisible(entries[2]!, data, { ...baseFilters, groupIds: [e0.topic_id] })).toBe(
       false,
     );
   });
 
-  it("null groupId leaves everything visible", () => {
+  it("no selected group leaves everything visible", () => {
     const out = applyListFilters(entries, baseFilters, data);
     expect(out).toHaveLength(3);
   });

@@ -118,21 +118,23 @@ export type FilterState = {
   /** Writer-only list-view filter on the Topic visibility flag. */
   visibility: "all" | "public" | "private";
   /**
-   * Topic id of a selected group. When set, only the group itself and its
-   * descendants stay visible — highlighting members on the radar exactly like
-   * the search box dims non-matches. `null` is a no-op.
+   * Topic ids of the selected groups. When non-empty, only those groups and
+   * their descendants stay visible — highlighting members on the radar exactly
+   * like the search box dims non-matches. Several groups combine as a union,
+   * so two branches of the tree can be shown in one radar. Empty is a no-op.
    */
-  groupId: string | null;
+  groupIds: string[];
 };
 
-/** Whether an entry belongs to the selected group (is the group or a descendant). */
+/** Whether an entry belongs to any selected group (is the group or a descendant). */
 export function matchesGroup(
   entry: { topic_id: string; ancestor_path?: string[] | null },
-  groupId: string | null,
+  groupIds: string[],
 ): boolean {
-  if (!groupId) return true;
-  if (entry.topic_id === groupId) return true;
-  return (entry.ancestor_path ?? []).includes(groupId);
+  if (groupIds.length === 0) return true;
+  if (groupIds.includes(entry.topic_id)) return true;
+  const ancestors = entry.ancestor_path ?? [];
+  return groupIds.some((id) => ancestors.includes(id));
 }
 
 export type TopicRelation = {

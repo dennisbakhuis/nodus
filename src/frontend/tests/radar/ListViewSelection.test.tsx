@@ -18,7 +18,7 @@ const baseFilters: FilterState = {
   timeToMainstream: [],
   personIds: [],
   visibility: "all",
-  groupId: null,
+  groupIds: [],
 };
 
 function Harness() {
