@@ -44,7 +44,7 @@ function filtersFromParams(params: URLSearchParams): FilterState {
     timeToMainstream: [],
     personIds: [],
     visibility: "all",
-    groupId: params.get("group"),
+    groupIds: params.getAll("group"),
   };
 }
 
@@ -54,7 +54,7 @@ function filtersToParams(filters: FilterState): URLSearchParams {
   filters.rings.forEach((r) => p.append("ring", r));
   filters.movements.forEach((m) => p.append("movement", m));
   if (filters.search) p.set("search", filters.search);
-  if (filters.groupId) p.set("group", filters.groupId);
+  filters.groupIds.forEach((id) => p.append("group", id));
   return p;
 }
 

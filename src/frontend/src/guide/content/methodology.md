@@ -261,7 +261,9 @@ If technologies are organised into families, the **Group** filter shows them as 
 collapsible tree, with a control above it that unfolds the whole thing to a chosen
 level — numbered buttons while the hierarchy is shallow, a slider once it is deeper
 than six levels. Selecting a group highlights its members — a cross-cutting lens
-that never moves a dot.
+that never moves a dot. Select several groups to see their members together, for
+example two branches of the tree in one radar; the link in the address bar carries
+the selection.
 
 ### Movement between cycles
 

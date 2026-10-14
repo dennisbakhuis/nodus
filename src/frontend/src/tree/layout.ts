@@ -29,6 +29,54 @@ import { depthHeaderLabel, levelHeaderLabel } from "./treeEncodings";
 export const ROW_H = 46;
 export const COLUMN_W = 230;
 
+/** Narrowest a reader can drag a column; captions below this are unreadable. */
+export const MIN_COLUMN_W = 120;
+
+/** Widest a column can be dragged. */
+export const MAX_COLUMN_W = 640;
+
+/**
+ * Column widths the reader chose, keyed by level. Levels not listed take
+ * `COLUMN_W`. A long caption that gets cut off is fixed by widening its column
+ * rather than by shrinking the type.
+ */
+export type ColumnWidths = ReadonlyMap<number, number>;
+
+export const DEFAULT_COLUMN_WIDTHS: ColumnWidths = new Map();
+
+export function columnWidth(level: number, widths: ColumnWidths): number {
+  return widths.get(level) ?? COLUMN_W;
+}
+
+/**
+ * Centre x of each level when the columns are stacked left to right in the
+ * given order, each as wide as the reader made it.
+ */
+function centresByLevel(
+  levelsLeftToRight: number[],
+  widths: ColumnWidths,
+): Map<number, number> {
+  const centres = new Map<number, number>();
+  let edge = 0;
+  for (const level of levelsLeftToRight) {
+    const width = columnWidth(level, widths);
+    centres.set(level, edge + width / 2);
+    edge += width;
+  }
+  return centres;
+}
+
+/** Re-place every node on the centre of its column. */
+function spaceColumns(
+  nodes: PositionedNode[],
+  order: (a: number, b: number) => number,
+  widths: ColumnWidths,
+): void {
+  const levels = [...new Set(nodes.map((n) => n.level))].sort(order);
+  const centres = centresByLevel(levels, widths);
+  for (const node of nodes) node.x = centres.get(node.level) ?? node.x;
+}
+
 /** Gap between concentric depth rings in the radial layout. */
 export const RING_STEP = 120;
 
@@ -74,7 +122,12 @@ export type PositionedLink = {
   targetKind: TreeNodeKind;
 };
 
-export type ColumnHeader = { level: number; x: number; label: string };
+export type ColumnHeader = {
+  level: number;
+  x: number;
+  width: number;
+  label: string;
+};
 export type RingHeader = { level: number; radius: number; label: string };
 
 export type TreeLayout = {
@@ -162,6 +215,7 @@ export function layoutGroupTree(
   forest: GroupNode[],
   expanded: Set<string>,
   { matched, connector }: LayoutInput,
+  widths: ColumnWidths = DEFAULT_COLUMN_WIDTHS,
 ): TreeLayout {
   const root = forestHierarchy(forest, expanded);
 
@@ -191,6 +245,9 @@ export function layoutGroupTree(
     byId.set(positioned.topicId, positioned);
   }
 
+  // d3 spaced the depths uniformly; the reader's column widths replace that.
+  spaceColumns(nodes, (a, b) => a - b, widths);
+
   const links: PositionedLink[] = [];
   for (const point of root.links()) {
     if (point.source.data.topicId === SYNTHETIC_ROOT) continue;
@@ -212,7 +269,7 @@ export function layoutGroupTree(
   // it from the depth: the forest is laid out under a synthetic root, so d3
   // places depth 0 one column in, and deriving the header independently would
   // offset every caption by one column.
-  const columns = columnsFrom(nodes, depthHeaderLabel);
+  const columns = columnsFrom(nodes, depthHeaderLabel, widths);
 
   return {
     shape: "columns",
@@ -221,7 +278,7 @@ export function layoutGroupTree(
     links,
     columns,
     rings: [],
-    ...extent(nodes),
+    ...extent(nodes, widths),
   };
 }
 
@@ -353,6 +410,7 @@ export function layoutLineage(
     entry: RadarEntry | null;
   },
   { matched, connector }: LayoutInput,
+  widths: ColumnWidths = DEFAULT_COLUMN_WIDTHS,
 ): TreeLayout {
   const buckets = new Map<number, string[]>();
   for (const node of lineageNodes.values()) {
@@ -411,6 +469,10 @@ export function layoutLineage(
     }
   }
 
+  // Upstream levels are positive and sit left, so columns run from the
+  // highest level down.
+  spaceColumns(nodes, (a, b) => b - a, widths);
+
   const byId = new Map(nodes.map((n) => [n.topicId, n]));
   const links: PositionedLink[] = [];
   for (const edge of edges) {
@@ -433,7 +495,7 @@ export function layoutLineage(
     });
   }
 
-  const columns = columnsFrom(nodes, levelHeaderLabel, (a, b) => b - a);
+  const columns = columnsFrom(nodes, levelHeaderLabel, widths, (a, b) => b - a);
 
   return {
     shape: "columns",
@@ -442,7 +504,7 @@ export function layoutLineage(
     links,
     columns,
     rings: [],
-    ...extent(nodes),
+    ...extent(nodes, widths),
   };
 }
 
@@ -452,6 +514,7 @@ export function layoutLineage(
 function columnsFrom(
   nodes: PositionedNode[],
   label: (level: number) => string,
+  widths: ColumnWidths,
   order: (a: number, b: number) => number = (a, b) => a - b,
 ): ColumnHeader[] {
   const xByLevel = new Map<number, number>();
@@ -460,7 +523,12 @@ function columnsFrom(
   }
   return [...xByLevel.entries()]
     .sort((a, b) => order(a[0], b[0]))
-    .map(([level, x]) => ({ level, x, label: label(level) }));
+    .map(([level, x]) => ({
+      level,
+      x,
+      width: columnWidth(level, widths),
+      label: label(level),
+    }));
 }
 
 function barycentre(
@@ -475,12 +543,17 @@ function barycentre(
   return placed.reduce((a, b) => a + b, 0) / placed.length;
 }
 
-function extent(nodes: PositionedNode[]): { width: number; height: number } {
+function extent(
+  nodes: PositionedNode[],
+  widths: ColumnWidths = DEFAULT_COLUMN_WIDTHS,
+): { width: number; height: number } {
   if (nodes.length === 0) return { width: 0, height: 0 };
-  const xs = nodes.map((n) => n.x);
+  const levels = new Set(nodes.map((n) => n.level));
   const ys = nodes.map((n) => n.y);
+  let width = 0;
+  for (const level of levels) width += columnWidth(level, widths);
   return {
-    width: Math.max(...xs) - Math.min(...xs) + COLUMN_W,
+    width,
     height: Math.max(...ys) - Math.min(...ys) + ROW_H,
   };
 }

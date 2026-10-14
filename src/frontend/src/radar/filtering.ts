@@ -84,7 +84,7 @@ export function isVisible(
     if (!sr || !filters.strategicRelevance.includes(sr)) return false;
   }
   if (!matchesTrlAndTime(entry, filters)) return false;
-  if (!matchesGroup(entry, filters.groupId)) return false;
+  if (!matchesGroup(entry, filters.groupIds)) return false;
   return true;
 }
 
@@ -152,7 +152,7 @@ export function isVisibleInList(
     );
     if (!hasMatch) return false;
   }
-  if (!matchesGroup(entry, filters.groupId)) return false;
+  if (!matchesGroup(entry, filters.groupIds)) return false;
   return true;
 }
 

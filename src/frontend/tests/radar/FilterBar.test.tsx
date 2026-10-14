@@ -17,7 +17,7 @@ const defaultFilters: FilterState = {
   timeToMainstream: [],
   personIds: [],
   visibility: "all",
-  groupId: null,
+  groupIds: [],
 };
 
 describe("FilterBar", () => {
@@ -135,7 +135,7 @@ describe("FilterBar", () => {
       timeToMainstream: [],
       personIds: [],
       visibility: "all",
-      groupId: null,
+      groupIds: [],
     });
   });
 });

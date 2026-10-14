@@ -77,7 +77,7 @@ export function filtersFromParams(
           : isWriter
             ? "public"
             : "all",
-    groupId: params.get("group"),
+    groupIds: params.getAll("group"),
   };
 }
 
@@ -99,6 +99,6 @@ export function filtersToParams(filters: FilterState): URLSearchParams {
   filters.personIds.forEach((id) => p.append("person", id));
   if (filters.visibility === "private") p.set("vis", "private");
   else if (filters.visibility === "all") p.set("vis", "all");
-  if (filters.groupId) p.set("group", filters.groupId);
+  filters.groupIds.forEach((id) => p.append("group", id));
   return p;
 }

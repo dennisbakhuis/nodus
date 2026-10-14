@@ -44,7 +44,7 @@ const filters: FilterState = {
   timeToMainstream: [],
   personIds: [],
   visibility: "all",
-  groupId: null,
+  groupIds: [],
 };
 
 function renderSidebar(extra: Partial<Parameters<typeof Sidebar>[0]> = {}) {

@@ -275,3 +275,39 @@ describe("layoutLineage", () => {
     expect(byId.get("down")!.matched).toBe(false);
   });
 });
+
+describe("column widths", () => {
+  const forest = buildGroupForest(
+    [node("umbrella", [node("parent", [node("child")])])],
+    [entry("parent"), entry("child")],
+  );
+  const expanded = new Set(walkForest(forest).map((n) => n.topicId));
+
+  it("widens one column without moving the ones left of it", () => {
+    const base = layoutGroupTree(forest, expanded, NO_FILTER);
+    const wide = layoutGroupTree(
+      forest,
+      expanded,
+      NO_FILTER,
+      new Map([[1, COLUMN_W * 2]]),
+    );
+    const at = (
+      layout: { nodes: { topicId: string; x: number }[] },
+      id: string,
+    ) => layout.nodes.find((n) => n.topicId === id)!.x;
+    expect(at(wide, "umbrella")).toBe(at(base, "umbrella"));
+    expect(at(wide, "parent") - at(base, "parent")).toBe(COLUMN_W / 2);
+    expect(at(wide, "child") - at(base, "child")).toBe(COLUMN_W);
+    expect(wide.width - base.width).toBe(COLUMN_W);
+  });
+
+  it("reports each column's width on its header", () => {
+    const { columns } = layoutGroupTree(
+      forest,
+      expanded,
+      NO_FILTER,
+      new Map([[2, 300]]),
+    );
+    expect(columns.map((c) => c.width)).toEqual([COLUMN_W, COLUMN_W, 300]);
+  });
+});

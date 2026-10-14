@@ -311,7 +311,7 @@ export function Sidebar({
   ): React.ReactNode {
     const hasChildren = (node.children?.length ?? 0) > 0;
     const expanded = expandedGroups.has(node.topic_id);
-    const active = filters.groupId === node.topic_id;
+    const active = filters.groupIds.includes(node.topic_id);
     const hovered = hoveredGroupId === node.topic_id;
     const color = groupDepthColor(depth);
     // Children inherit this node's column as a vertical guide only when more
@@ -382,7 +382,9 @@ export function Sidebar({
             onClick={() =>
               onFiltersChange({
                 ...filters,
-                groupId: active ? null : node.topic_id,
+                groupIds: active
+                  ? filters.groupIds.filter((id) => id !== node.topic_id)
+                  : [...filters.groupIds, node.topic_id],
               })
             }
             title={
@@ -523,7 +525,7 @@ export function Sidebar({
       timeToMainstream: [],
       personIds: [],
       visibility: showRegistryFilters && isWriter ? "public" : "all",
-      groupId: null,
+      groupIds: [],
     });
     onSearchChange("");
     if (showColorPicker && colorMode !== "segment") {
@@ -558,7 +560,7 @@ export function Sidebar({
     (showRegistryFilters && filters.visibility !== defaultVisibility) ||
     (showColorPicker && colorMode !== "segment") ||
     (showShapePicker && shapeMode !== "dot") ||
-    filters.groupId != null ||
+    filters.groupIds.length > 0 ||
     search.trim().length > 0;
 
   return (
@@ -1261,9 +1263,9 @@ export function Sidebar({
           }}
         >
           <SectionLabel>Group</SectionLabel>
-          {filters.groupId != null && (
+          {filters.groupIds.length > 0 && (
             <ResetButton
-              onClick={() => onFiltersChange({ ...filters, groupId: null })}
+              onClick={() => onFiltersChange({ ...filters, groupIds: [] })}
               aria-label="Reset group filter"
             />
           )}
