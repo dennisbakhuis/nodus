@@ -20,6 +20,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
   type Ref,
 } from "react";
 import { RELATION_STROKES } from "../radar/encodings";
@@ -27,7 +28,11 @@ import { themeByKey, type SegmentTheme } from "../radar/segmentThemes";
 import type { RadarData } from "../radar/types";
 import {
   COLUMN_W,
+  MAX_COLUMN_W,
+  MIN_COLUMN_W,
   RING_STEP,
+  columnWidth,
+  type ColumnWidths,
   type PositionedNode,
   type TreeLayout,
 } from "./layout";
@@ -37,6 +42,10 @@ import { usePanZoom, type TreeViewControls } from "./usePanZoom";
 type Props = {
   layout: TreeLayout;
   data: RadarData;
+  /** Column widths the reader dragged; the view reads them, the page owns them. */
+  columnWidths?: ColumnWidths;
+  /** `null` width restores the default for that level. */
+  onColumnWidthChange?: (level: number, width: number | null) => void;
   selectedTopicId: string | null;
   anchorTopicId: string | null;
   onSelect: (node: PositionedNode) => void;
@@ -73,11 +82,14 @@ const STROKE_BY_KIND = {
   relates: RELATION_STROKES.relates_to,
 };
 
-/** Keep a caption inside its column so neighbouring labels cannot collide. */
+/** Caption characters that fit a column of the default width. */
 const MAX_LABEL_CHARS = 26;
 
 /** Half-width of a node's clickable area, sized to cover a truncated caption. */
 const HIT_HALF_W = 95;
+
+/** Width of the drag handle on a column's right edge, in screen pixels. */
+const RESIZE_HANDLE_W = 10;
 
 /** Length of the clickable strip that follows a radial caption outwards. */
 const RADIAL_HIT_W = 170;
@@ -111,10 +123,17 @@ svg[data-zoom-band="far"] .tree-node[data-kind="technology"] .tree-node__label {
 }
 `;
 
-function truncateLabel(name: string): string {
-  return name.length > MAX_LABEL_CHARS
-    ? `${name.slice(0, MAX_LABEL_CHARS - 1)}…`
-    : name;
+/**
+ * Keep a caption inside its column so neighbouring labels cannot collide. The
+ * budget scales with the column, so widening a column is how a reader gets a
+ * cut-off caption back in full.
+ */
+function truncateLabel(name: string, laneWidth: number = COLUMN_W): string {
+  const budget = Math.max(
+    8,
+    Math.round((MAX_LABEL_CHARS * laneWidth) / COLUMN_W),
+  );
+  return name.length > budget ? `${name.slice(0, budget - 1)}…` : name;
 }
 
 /**
@@ -171,6 +190,8 @@ function emphasisFor(
 export function TreeView({
   layout,
   data,
+  columnWidths,
+  onColumnWidthChange,
   selectedTopicId,
   anchorTopicId,
   onSelect,
@@ -183,7 +204,9 @@ export function TreeView({
   controlsRef,
   svgRef,
 }: Props) {
-  const fitKey = `${layout.shape}:${layout.nodes.length}:${layout.width}:${layout.height}:${layout.columns.length}`;
+  // Width is left out on purpose: dragging a column wider changes it, and a
+  // refit on every pointer move would yank the canvas under the drag.
+  const fitKey = `${layout.shape}:${layout.nodes.length}:${layout.height}:${layout.columns.length}`;
   const {
     wrapperRef,
     rootGRef,
@@ -386,9 +409,9 @@ export function TreeView({
               {layout.columns.map((column, index) => (
                 <rect
                   key={`lane-${column.level}`}
-                  x={column.x - COLUMN_W / 2}
+                  x={column.x - column.width / 2}
                   y={laneTop}
-                  width={COLUMN_W}
+                  width={column.width}
                   height={laneBottom - laneTop}
                   // The caption rail is HTML outside the SVG, so a serialised
                   // export loses it. Carrying the caption on the lane lets
@@ -411,8 +434,8 @@ export function TreeView({
               {layout.columns.map((column) => (
                 <line
                   key={`sep-${column.level}`}
-                  x1={column.x + COLUMN_W / 2}
-                  x2={column.x + COLUMN_W / 2}
+                  x1={column.x + column.width / 2}
+                  x2={column.x + column.width / 2}
                   y1={laneTop}
                   y2={laneBottom}
                   stroke="var(--color-border)"
@@ -540,6 +563,11 @@ export function TreeView({
                   onPressStart={handlePressStart}
                   onToggleBranch={onToggleBranch}
                   showDisclosure={layout.shape === "columns"}
+                  laneWidth={
+                    layout.shape === "columns" && columnWidths
+                      ? columnWidth(node.level, columnWidths)
+                      : COLUMN_W
+                  }
                 />
               ))}
             </g>
@@ -570,7 +598,7 @@ export function TreeView({
                 position: "absolute",
                 left: translate.x + zoom * column.x,
                 top: 6,
-                width: Math.max(48, zoom * COLUMN_W - 8),
+                width: Math.max(48, zoom * column.width - 8),
                 transform: "translateX(-50%)",
                 textAlign: "center",
                 whiteSpace: "nowrap",
@@ -594,7 +622,98 @@ export function TreeView({
           ))}
         </div>
       )}
+
+      {layout.shape === "columns" && onColumnWidthChange && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 30,
+            pointerEvents: "none",
+            overflow: "hidden",
+          }}
+        >
+          {layout.columns.map((column) => (
+            <ColumnResizeHandle
+              key={`resize-${column.level}`}
+              label={column.label}
+              screenX={translate.x + zoom * (column.x + column.width / 2)}
+              width={column.width}
+              zoom={zoom}
+              onChange={(width) => onColumnWidthChange(column.level, width)}
+            />
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * The grab strip on a column's right edge. It lives in the caption rail, which
+ * is the one part of the canvas that neither pans nor zooms under the pointer,
+ * so a drag stays on the edge it started on.
+ */
+function ColumnResizeHandle({
+  label,
+  screenX,
+  width,
+  zoom,
+  onChange,
+}: {
+  label: string;
+  screenX: number;
+  width: number;
+  zoom: number;
+  onChange: (width: number | null) => void;
+}) {
+  const drag = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [active, setActive] = useState(false);
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize column ${label}`}
+      title="Drag to resize the column, double-click to reset"
+      onPointerDown={(e) => {
+        if (e.button !== 0 && e.pointerType === "mouse") return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        drag.current = { startX: e.clientX, startWidth: width };
+        setActive(true);
+      }}
+      onPointerMove={(e) => {
+        const from = drag.current;
+        if (!from) return;
+        const next = from.startWidth + (e.clientX - from.startX) / zoom;
+        onChange(Math.min(MAX_COLUMN_W, Math.max(MIN_COLUMN_W, next)));
+      }}
+      onPointerUp={(e) => {
+        drag.current = null;
+        setActive(false);
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }}
+      onPointerCancel={() => {
+        drag.current = null;
+        setActive(false);
+      }}
+      onDoubleClick={() => onChange(null)}
+      style={{
+        position: "absolute",
+        top: 0,
+        left: screenX - RESIZE_HANDLE_W / 2,
+        width: RESIZE_HANDLE_W,
+        height: "100%",
+        cursor: "col-resize",
+        pointerEvents: "auto",
+        touchAction: "none",
+        background: active
+          ? "color-mix(in srgb, var(--color-brand-blue) 35%, transparent)"
+          : "transparent",
+      }}
+    />
   );
 }
 
@@ -610,6 +729,7 @@ function TreeNodeMark({
   onPressStart,
   onToggleBranch,
   showDisclosure,
+  laneWidth = COLUMN_W,
 }: {
   node: PositionedNode;
   theme: SegmentTheme;
@@ -623,6 +743,8 @@ function TreeNodeMark({
   onToggleBranch: (node: PositionedNode) => void;
   /** Radial nodes have no consistent "left", so the control is columns-only. */
   showDisclosure: boolean;
+  /** Width of the column the node sits in; sizes its caption budget and hit area. */
+  laneWidth?: number;
 }) {
   const pressTimer = useRef<number | null>(null);
   const pressOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -636,6 +758,10 @@ function TreeNodeMark({
   useEffect(() => cancelPress, [cancelPress]);
   const mark = NODE_MARKS[node.kind];
   const accent = groupDepthColor(Math.abs(node.level));
+  const hitHalfW = Math.max(
+    40,
+    Math.round((HIT_HALF_W * laneWidth) / COLUMN_W),
+  );
   const outer = mark.outerRadius ?? mark.radius;
   const radial = node.angle !== undefined;
   const flip = radial && node.angle! > Math.PI;
@@ -682,7 +808,7 @@ function TreeNodeMark({
       }}
     >
       <title>{node.name}</title>
-      {truncateLabel(node.name)}
+      {truncateLabel(node.name, laneWidth)}
     </text>
   );
 
@@ -738,9 +864,9 @@ function TreeNodeMark({
       <circle r={outer + 8} fill="transparent" pointerEvents="all" />
       {!radial && (
         <rect
-          x={-HIT_HALF_W}
+          x={-hitHalfW}
           y={-outer - 4}
-          width={HIT_HALF_W * 2}
+          width={hitHalfW * 2}
           height={outer + 28}
           fill="transparent"
           pointerEvents="all"

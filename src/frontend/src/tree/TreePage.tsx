@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { readPreference, writePreference } from "../shared/prefsStore";
 import { fetchCurrentRadar } from "../api/radar-snapshot";
 import { fetchRelations } from "../api/relations";
 import { listGroupsTree } from "../api/topics";
@@ -52,6 +53,7 @@ import { buildLineage, canonicalEdges } from "./dependencyGraph";
 import {
   layoutGroupTree,
   layoutLineage,
+  type ColumnWidths,
   layoutRadialGroups,
   type PositionedNode,
 } from "./layout";
@@ -82,6 +84,37 @@ function parseFocusScope(raw: string | null): FocusScope {
 function parseLevels(raw: string | null): TreeLevels {
   const n = Number(raw);
   return Number.isInteger(n) && n >= 1 ? n : "all";
+}
+
+// Column widths are a per-reader convenience, like the collapsed sidebar, so
+// they live in this browser rather than in the URL. Groups mode and
+// dependency mode number their levels differently, so each keeps its own set.
+const COLUMN_WIDTHS_KEY = "tree.columnWidths";
+
+type StoredColumnWidths = Partial<Record<TreeMode, Record<string, number>>>;
+
+function readColumnWidths(): Record<TreeMode, Map<number, number>> {
+  const widths = {
+    groups: new Map<number, number>(),
+    deps: new Map<number, number>(),
+  };
+  const stored = readPreference<StoredColumnWidths>(COLUMN_WIDTHS_KEY, {});
+  for (const mode of ["groups", "deps"] as const) {
+    for (const [level, width] of Object.entries(stored[mode] ?? {})) {
+      if (Number.isFinite(Number(level)) && Number.isFinite(width)) {
+        widths[mode].set(Number(level), width);
+      }
+    }
+  }
+  return widths;
+}
+
+function writeColumnWidths(all: Record<TreeMode, Map<number, number>>): void {
+  const stored: StoredColumnWidths = {
+    groups: Object.fromEntries(all.groups),
+    deps: Object.fromEntries(all.deps),
+  };
+  writePreference(COLUMN_WIDTHS_KEY, stored);
 }
 
 export function TreePage() {
@@ -127,6 +160,22 @@ export function TreePage() {
   );
   const [depth, setDepth] = useState<TreeDepth>(() =>
     parseDepth(searchParams.get("depth")),
+  );
+  const [columnWidthsByMode, setColumnWidthsByMode] =
+    useState(readColumnWidths);
+  const columnWidths: ColumnWidths = columnWidthsByMode[mode];
+  const handleColumnWidth = useCallback(
+    (level: number, width: number | null) => {
+      setColumnWidthsByMode((prev) => {
+        const next = new Map(prev[mode]);
+        if (width === null) next.delete(level);
+        else next.set(level, Math.round(width));
+        const all = { ...prev, [mode]: next };
+        writeColumnWidths(all);
+        return all;
+      });
+    },
+    [mode],
   );
   const [anchorSlug, setAnchorSlug] = useState<string | null>(() =>
     searchParams.get("anchor"),
@@ -337,7 +386,7 @@ export function TreePage() {
       const input = { matched: matchedIds, connector: connectorOnly };
       return shape === "radial"
         ? layoutRadialGroups(nodes, expanded, input)
-        : layoutGroupTree(nodes, expanded, input);
+        : layoutGroupTree(nodes, expanded, input, columnWidths);
     }
     if (!anchorTopicId) return null;
     const edges = canonicalEdges(relations);
@@ -359,6 +408,7 @@ export function TreePage() {
         };
       },
       { matched: matchedIds, connector: new Set<string>() },
+      columnWidths,
     );
   }, [
     data,
@@ -372,6 +422,7 @@ export function TreePage() {
     depth,
     nodeByTopic,
     entryByTopic,
+    columnWidths,
   ]);
 
   const toggleBranch = useCallback((node: PositionedNode) => {
@@ -524,6 +575,8 @@ export function TreePage() {
           <TreeView
             layout={layout}
             data={data}
+            columnWidths={columnWidths}
+            onColumnWidthChange={handleColumnWidth}
             selectedTopicId={selected?.topic_id ?? null}
             anchorTopicId={anchorTopicId}
             onSelect={handleSelect}

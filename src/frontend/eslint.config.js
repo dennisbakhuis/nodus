@@ -51,9 +51,11 @@ export default [
     files: [
       "src/shared/tokenStore.ts",
       "src/shared/useResizableWidth.tsx",
+      "src/shared/prefsStore.ts",
       "src/radar/RadarPage.tsx",
     ],
-    // These use localStorage for sidebar width / collapsed state — not auth.
+    // These use localStorage for sidebar width / collapsed state and other
+    // display preferences — not auth.
     // tokenStore IS the wrapper.
     rules: { "no-restricted-syntax": "off" },
   },
