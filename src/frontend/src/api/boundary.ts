@@ -183,20 +183,25 @@ const TopicDetailResponseSchema = z
     technology: z.unknown().nullable().optional(),
     factsheet: z.unknown().nullable().optional(),
     assessment: TopicDetailAssessmentSchema.nullable().optional(),
-    aliases: z.array(AliasReadSchema),
+    // The visibility config can strip either list for the caller's role;
+    // default to [] so consumers keep iterating without a guard.
+    aliases: z.array(AliasReadSchema).optional().default([]),
     recent_events: z.array(MovementEventReadSchema).optional(),
-    peer_references: z.array(
-      z
-        .object({
-          id: z.string(),
-          topic_id: z.string(),
-          party_id: z.string(),
-          party_name: z.string(),
-          party_slug: z.string(),
-          peer_title: z.string(),
-        })
-        .passthrough(),
-    ),
+    peer_references: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            topic_id: z.string(),
+            party_id: z.string(),
+            party_name: z.string(),
+            party_slug: z.string(),
+            peer_title: z.string(),
+          })
+          .passthrough(),
+      )
+      .optional()
+      .default([]),
     peer_reference_count: z.number(),
     persons: z.array(TopicDetailPersonRowSchema).optional(),
     hero_image_url: z.string().nullable(),
