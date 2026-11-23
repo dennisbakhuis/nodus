@@ -131,6 +131,52 @@ describe("api/boundary", () => {
       expect(() => parseTopicDetailResponse(stripped)).not.toThrow();
     });
 
+    it("accepts a payload with every visibility-strippable field removed", () => {
+      // Mirrors DEFAULT_FIELD_ROLES in app/services/visibility.py; an admin can
+      // hide any of these from any non-admin role on the Visibility page.
+      const stripped = JSON.parse(
+        JSON.stringify({
+          ...VALID_TOPIC_DETAIL,
+          factsheet: {
+            id: "fs-1",
+            summary: "Power electronics that …",
+            tax_credit_candidate: "No",
+            publication_links: [],
+            key_players: "",
+            recommended_next_steps: "",
+            current_challenges: "",
+          },
+        }),
+      ) as Record<string, unknown>;
+      for (const key of [
+        "persons",
+        "peer_references",
+        "recent_events",
+        "aliases",
+        "created_by",
+        "assessment",
+      ]) {
+        delete stripped[key];
+      }
+      const factsheet = stripped.factsheet as Record<string, unknown>;
+      for (const key of [
+        "tax_credit_candidate",
+        "publication_links",
+        "key_players",
+        "recommended_next_steps",
+        "current_challenges",
+      ]) {
+        delete factsheet[key];
+      }
+
+      const parsed = parseTopicDetailResponse(stripped) as {
+        aliases: unknown[];
+        peer_references: unknown[];
+      };
+      expect(parsed.aliases).toEqual([]);
+      expect(parsed.peer_references).toEqual([]);
+    });
+
     it("rejects a missing required `topic.canonical_name`", () => {
       const broken = JSON.parse(JSON.stringify(VALID_TOPIC_DETAIL));
       delete broken.topic.canonical_name;
